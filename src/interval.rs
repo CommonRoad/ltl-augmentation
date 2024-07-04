@@ -1,4 +1,4 @@
-use std::{collections::HashSet, iter::zip, ops::Add};
+use std::ops::Add;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Interval {
@@ -95,9 +95,9 @@ impl Interval {
             if end >= start && !active.is_empty() {
                 // Create a new interval with all active values
                 merged.push((Interval::from_endpoints(start, end), active.clone()));
-                // The next interval always starts one step after the one we just completed
-                start = end + 1;
             }
+            // The next interval always starts one step after the one we just completed
+            start = end + 1;
 
             // Activate or deactivate the value
             if is_entry {
