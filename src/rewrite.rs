@@ -5,34 +5,91 @@ use crate::{formula::NNFFormula, interval::Interval};
 pub fn rewrite(nnf: NNFFormula) -> NNFFormula {
     match nnf {
         NNFFormula::And(subs) => {
-            let untils: MultiMap<_, _> = subs
-                .iter()
-                .filter_map(|f| match f {
-                    NNFFormula::Until(lhs, int, rhs) => Some((rhs, (*int, lhs))),
-                    _ => None,
-                })
-                .collect();
-            let new_subs = untils
-                .iter_all()
-                .flat_map(|(rhs, intervals)| {
-                    Interval::merge(intervals.clone())
-                        .into_iter()
-                        .map(|(int, lhs)| {
-                            NNFFormula::Until(
-                                Box::new(NNFFormula::And(
-                                    lhs.into_iter().map(|f| (**f).clone()).collect(),
-                                )),
-                                int,
-                                (*rhs).clone(),
-                            )
-                        })
-                })
-                .collect();
+            // Rewrite all subformulas
+            let subs = subs.into_iter().map(rewrite);
+            // Extract untils and releases
+            let (untils, releases, mut rest) = extract_until_and_release(subs);
 
-            NNFFormula::And(new_subs)
+            // Apply \phi U \gamma & \psi U \gamma = (\phi & \psi) U \gamma (adapted for intervals)
+            let new_untils = grouped_interval_merge(untils.into_iter().map(|f| match f {
+                // We use the rhs as the key to group the untils
+                NNFFormula::Until(lhs, int, key) => (*key, int, *lhs),
+                _ => unreachable!(),
+            }))
+            .into_iter()
+            .map(|(key, int, lhs)| NNFFormula::until(NNFFormula::and(lhs), int, key));
+
+            // Apply \gamma R \phi & \gamma R \psi = \gamma R (\phi & \psi) (adapted for intervals)
+            let new_releases = grouped_interval_merge(releases.into_iter().map(|f| match f {
+                // We use the lhs as the key to group the releases
+                NNFFormula::Release(key, int, rhs) => (*key, int, *rhs),
+                _ => unreachable!(),
+            }))
+            .into_iter()
+            .map(|(key, int, rhs)| NNFFormula::release(key, int, NNFFormula::and(rhs)));
+
+            rest.extend(new_untils);
+            rest.extend(new_releases);
+            NNFFormula::and(rest)
+        }
+        NNFFormula::Or(subs) => {
+            // Rewrite all subformulas
+            let subs = subs.into_iter().map(rewrite);
+            // Extract untils and releases
+            let (untils, releases, mut rest) = extract_until_and_release(subs);
+
+            // Apply \gamma U \phi | \gamma U \psi = \gamma U (\phi | \psi) (adapted for intervals)
+            let new_untils = grouped_interval_merge(untils.into_iter().map(|f| match f {
+                // We use the lhs as the key to group the untils
+                NNFFormula::Until(key, int, rhs) => (*key, int, *rhs),
+                _ => unreachable!(),
+            }))
+            .into_iter()
+            .map(|(key, int, rhs)| NNFFormula::until(key, int, NNFFormula::or(rhs)));
+
+            // Apply \phi R \gamma | \psi R \gamma = (\phi | \psi) R \gamma (adapted for intervals)
+            let new_releases = grouped_interval_merge(releases.into_iter().map(|f| match f {
+                // We use the rhs as the key to group the releases
+                NNFFormula::Release(lhs, int, key) => (*key, int, *lhs),
+                _ => unreachable!(),
+            }))
+            .into_iter()
+            .map(|(key, int, lhs)| NNFFormula::release(NNFFormula::or(lhs), int, key));
+
+            rest.extend(new_untils);
+            rest.extend(new_releases);
+            NNFFormula::or(rest)
+        }
+        NNFFormula::Until(lhs, int, rhs) => NNFFormula::until(rewrite(*lhs), int, rewrite(*rhs)),
+        NNFFormula::Release(lhs, int, rhs) => {
+            NNFFormula::release(rewrite(*lhs), int, rewrite(*rhs))
         }
         _ => nnf,
     }
+}
+
+fn extract_until_and_release(
+    nnfs: impl Iterator<Item = NNFFormula>,
+) -> (Vec<NNFFormula>, Vec<NNFFormula>, Vec<NNFFormula>) {
+    let (untils, rest): (Vec<_>, Vec<_>) = nnfs.partition(|f| matches!(f, NNFFormula::Until(..)));
+    let (releases, rest): (Vec<_>, Vec<_>) = rest
+        .into_iter()
+        .partition(|f| matches!(f, NNFFormula::Release(..)));
+    (untils, releases, rest)
+}
+
+fn grouped_interval_merge(
+    formulas: impl Iterator<Item = (NNFFormula, Interval, NNFFormula)>,
+) -> Vec<(NNFFormula, Interval, Vec<NNFFormula>)> {
+    let multi_map: MultiMap<_, _> = formulas.map(|(key, int, val)| (key, (int, val))).collect();
+    multi_map
+        .iter_all()
+        .flat_map(|(key, intervals)| {
+            Interval::merge(intervals.clone())
+                .into_iter()
+                .map(move |(int, vals)| ((*key).clone(), int, vals))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -42,20 +99,42 @@ mod test {
     #[test]
     fn test_rewrite() {
         let phi = NNFFormula::And(vec![
-            NNFFormula::Until(
-                Box::new(NNFFormula::AP("a".to_string(), true)),
+            NNFFormula::until(
+                NNFFormula::AP("a".to_string(), true),
                 Interval::from_endpoints(1, 4),
-                Box::new(NNFFormula::AP("c".to_string(), true)),
+                NNFFormula::AP("c".to_string(), true),
             ),
-            NNFFormula::Until(
-                Box::new(NNFFormula::AP("b".to_string(), true)),
+            NNFFormula::until(
+                NNFFormula::AP("b".to_string(), true),
                 Interval::from_endpoints(3, 10),
-                Box::new(NNFFormula::AP("c".to_string(), true)),
+                NNFFormula::AP("c".to_string(), true),
             ),
         ]);
 
-        let phi = rewrite(phi);
+        let rewritten = rewrite(phi);
 
-        dbg!(phi);
+        assert_eq!(
+            rewritten,
+            NNFFormula::And(vec![
+                NNFFormula::until(
+                    NNFFormula::AP("a".to_string(), true),
+                    Interval::from_endpoints(1, 2),
+                    NNFFormula::AP("c".to_string(), true),
+                ),
+                NNFFormula::until(
+                    NNFFormula::And(vec![
+                        NNFFormula::AP("a".to_string(), true),
+                        NNFFormula::AP("b".to_string(), true),
+                    ]),
+                    Interval::from_endpoints(3, 4),
+                    NNFFormula::AP("c".to_string(), true),
+                ),
+                NNFFormula::until(
+                    NNFFormula::AP("b".to_string(), true),
+                    Interval::from_endpoints(5, 10),
+                    NNFFormula::AP("c".to_string(), true),
+                ),
+            ])
+        )
     }
 }
