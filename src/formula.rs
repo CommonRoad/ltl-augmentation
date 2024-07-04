@@ -1,6 +1,6 @@
 use super::interval::Interval;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Formula {
     // atomic proposition + constants
     AP(String),
@@ -20,7 +20,7 @@ pub enum Formula {
     Finally(Interval, Box<Formula>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum NNFFormula {
     // atomic proposition + constants
     AP(String, bool),
