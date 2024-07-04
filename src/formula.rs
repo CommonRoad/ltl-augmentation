@@ -64,7 +64,7 @@ impl Formula {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NNFFormula {
     // atomic proposition + constants
     AP(String, bool),

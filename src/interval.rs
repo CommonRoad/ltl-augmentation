@@ -1,6 +1,6 @@
 use std::ops::Add;
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Interval {
     Range(u32, u32),
     Empty,
@@ -91,13 +91,16 @@ impl Interval {
             // Entry events complete the interval until time - 1 (because it becomes active at time)
             // Exit events complete the interval until time (because it becomes inactive at time)
             // Since we process entry events first, we correctly get unitary intervals if both entries and exits happen at the same time
-            let end = if is_entry { time - 1 } else { time };
-            if end >= start && !active.is_empty() {
-                // Create a new interval with all active values
-                merged.push((Interval::from_endpoints(start, end), active.clone()));
+            // Entry events at time 0 never complete an interval
+            if !is_entry || time > 0 {
+                let end = if is_entry { time - 1 } else { time };
+                if end >= start && !active.is_empty() {
+                    // Create a new interval with all active values
+                    merged.push((Interval::from_endpoints(start, end), active.clone()));
+                }
+                // The next interval always starts one step after the one we just completed
+                start = end + 1;
             }
-            // The next interval always starts one step after the one we just completed
-            start = end + 1;
 
             // Activate or deactivate the value
             if is_entry {
