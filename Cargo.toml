@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 itertools = "0.13.0"
 multimap = "0.10.0"
+peg = "0.8.3"
