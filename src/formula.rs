@@ -30,7 +30,7 @@ impl Formula {
     pub fn and(mut subs: Vec<Formula>) -> Formula {
         match subs.len() {
             0 => Formula::True,
-            1 => subs.pop().unwrap(),
+            1 => subs.pop().expect("Length is 1"),
             _ => Formula::And(subs),
         }
     }
@@ -38,7 +38,7 @@ impl Formula {
     pub fn or(mut subs: Vec<Formula>) -> Formula {
         match subs.len() {
             0 => Formula::False,
-            1 => subs.pop().unwrap(),
+            1 => subs.pop().expect("Length is 1"),
             _ => Formula::Or(subs),
         }
     }
@@ -84,7 +84,7 @@ impl NNFFormula {
     pub fn and(mut subs: Vec<NNFFormula>) -> NNFFormula {
         match subs.len() {
             0 => NNFFormula::True,
-            1 => subs.pop().unwrap(),
+            1 => subs.pop().expect("Length is 1"),
             _ if subs.iter().any(|f| matches!(f, NNFFormula::False)) => NNFFormula::False,
             _ => NNFFormula::And(
                 subs.into_iter()
@@ -102,7 +102,7 @@ impl NNFFormula {
     pub fn or(mut subs: Vec<NNFFormula>) -> NNFFormula {
         match subs.len() {
             0 => NNFFormula::False,
-            1 => subs.pop().unwrap(),
+            1 => subs.pop().expect("Length is 1"),
             _ if subs.iter().any(|f| matches!(f, NNFFormula::True)) => NNFFormula::True,
             _ => NNFFormula::Or(
                 subs.into_iter()
