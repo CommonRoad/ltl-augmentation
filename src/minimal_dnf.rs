@@ -19,10 +19,7 @@ fn min_product<T: Clone + Eq + std::hash::Hash>(a: Vec<Vec<T>>, b: Vec<Vec<T>>) 
     let mut a_by_size: MultiMap<_, Vec<T>> = a.into_iter().map(|v| (v.len(), v)).collect();
     let mut b_by_size: MultiMap<_, Vec<T>> = b.into_iter().map(|v| (v.len(), v)).collect();
 
-    let sizes: HashSet<_> = a_by_size
-        .keys()
-        .copied()
-        .cartesian_product(b_by_size.keys().copied())
+    let sizes: HashSet<_> = iproduct!(a_by_size.keys().copied(), b_by_size.keys().copied())
         .sorted_unstable_by_key(|(a, b)| a + b)
         .collect();
 
@@ -36,8 +33,7 @@ fn min_product<T: Clone + Eq + std::hash::Hash>(a: Vec<Vec<T>>, b: Vec<Vec<T>>) 
             .expect("size_b is from the key set");
 
         let mut new_results: Vec<Vec<_>> = Vec::new();
-        for (i, a) in vec_a.iter().enumerate() {
-            for b in &vec_b[i..] {
+        for (a, b) in iproduct!(vec_a, vec_b) {
                 let union: Vec<_> = a.iter().chain(b.iter()).unique().cloned().collect();
                 if !any_fully_contained(&union, result.iter())
                     && !any_fully_contained(&union, new_results.iter())
@@ -45,7 +41,6 @@ fn min_product<T: Clone + Eq + std::hash::Hash>(a: Vec<Vec<T>>, b: Vec<Vec<T>>) 
                     remove_supersets(&union, &mut result);
                     remove_supersets(&union, &mut new_results);
                     new_results.push(union);
-                }
             }
         }
 
