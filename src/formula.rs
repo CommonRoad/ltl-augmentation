@@ -1,8 +1,10 @@
+use std::collections::BTreeSet;
+
 use itertools::Itertools;
 
 use crate::interval::Interval;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Formula {
     // atomic proposition + constants
     AP(String),
@@ -11,8 +13,8 @@ pub enum Formula {
 
     // propositional connectives
     Not(Box<Formula>),
-    And(Vec<Formula>),
-    Or(Vec<Formula>),
+    And(BTreeSet<Formula>),
+    Or(BTreeSet<Formula>),
     Implies(Box<Formula>, Box<Formula>),
 
     // temporal connectives
@@ -27,18 +29,20 @@ impl Formula {
         Formula::Not(Box::new(sub))
     }
 
-    pub fn and(mut subs: Vec<Formula>) -> Formula {
+    pub fn and(subs: impl IntoIterator<Item = Formula>) -> Formula {
+        let mut subs: BTreeSet<_> = subs.into_iter().collect();
         match subs.len() {
             0 => Formula::True,
-            1 => subs.pop().expect("Length is 1"),
+            1 => subs.pop_first().expect("Length is 1"),
             _ => Formula::And(subs),
         }
     }
 
-    pub fn or(mut subs: Vec<Formula>) -> Formula {
+    pub fn or(subs: impl IntoIterator<Item = Formula>) -> Formula {
+        let mut subs: BTreeSet<_> = subs.into_iter().collect();
         match subs.len() {
             0 => Formula::False,
-            1 => subs.pop().expect("Length is 1"),
+            1 => subs.pop_first().expect("Length is 1"),
             _ => Formula::Or(subs),
         }
     }
@@ -72,8 +76,8 @@ pub enum NNFFormula {
     False,
 
     // propositional connectives
-    And(Vec<NNFFormula>),
-    Or(Vec<NNFFormula>),
+    And(BTreeSet<NNFFormula>),
+    Or(BTreeSet<NNFFormula>),
 
     // temporal connectives
     Until(Box<NNFFormula>, Interval, Box<NNFFormula>),
@@ -86,24 +90,25 @@ impl NNFFormula {
             NNFFormula::AP(name, negated) => NNFFormula::AP(name, !negated),
             NNFFormula::True => NNFFormula::False,
             NNFFormula::False => NNFFormula::True,
-            NNFFormula::And(subs) => NNFFormula::or(subs.into_iter().map(|f| f.not()).collect()),
-            NNFFormula::Or(subs) => NNFFormula::and(subs.into_iter().map(|f| f.not()).collect()),
+            NNFFormula::And(subs) => NNFFormula::or(subs.into_iter().map(|f| f.not())),
+            NNFFormula::Or(subs) => NNFFormula::and(subs.into_iter().map(|f| f.not())),
             NNFFormula::Until(lhs, int, rhs) => NNFFormula::release(lhs.not(), int, rhs.not()),
             NNFFormula::Release(lhs, int, rhs) => NNFFormula::until(lhs.not(), int, rhs.not()),
         }
     }
 
-    pub fn and(mut subs: Vec<NNFFormula>) -> NNFFormula {
+    pub fn and(subs: impl IntoIterator<Item = NNFFormula>) -> NNFFormula {
+        let mut subs: BTreeSet<_> = subs.into_iter().collect();
         match subs.len() {
             0 => NNFFormula::True,
-            1 => subs.pop().expect("Length is 1"),
+            1 => subs.pop_first().expect("Length is 1"),
             _ if subs.iter().any(|f| matches!(f, NNFFormula::False)) => NNFFormula::False,
             _ => NNFFormula::And(
                 subs.into_iter()
                     .filter(|f| !matches!(f, NNFFormula::True))
                     .flat_map(|f| match f {
                         NNFFormula::And(subs) => subs,
-                        f => vec![f],
+                        f => [f].into(),
                     })
                     .unique()
                     .collect(),
@@ -111,17 +116,18 @@ impl NNFFormula {
         }
     }
 
-    pub fn or(mut subs: Vec<NNFFormula>) -> NNFFormula {
+    pub fn or(subs: impl IntoIterator<Item = NNFFormula>) -> NNFFormula {
+        let mut subs: BTreeSet<_> = subs.into_iter().collect();
         match subs.len() {
             0 => NNFFormula::False,
-            1 => subs.pop().expect("Length is 1"),
+            1 => subs.pop_first().expect("Length is 1"),
             _ if subs.iter().any(|f| matches!(f, NNFFormula::True)) => NNFFormula::True,
             _ => NNFFormula::Or(
                 subs.into_iter()
                     .filter(|f| !matches!(f, NNFFormula::False))
                     .flat_map(|f| match f {
                         NNFFormula::Or(subs) => subs,
-                        f => vec![f],
+                        f => [f].into(),
                     })
                     .unique()
                     .collect(),
@@ -145,9 +151,9 @@ impl From<Formula> for NNFFormula {
             Formula::True => NNFFormula::True,
             Formula::False => NNFFormula::False,
 
-            Formula::And(subs) => NNFFormula::and(subs.into_iter().map(|f| f.into()).collect()),
-            Formula::Or(subs) => NNFFormula::or(subs.into_iter().map(|f| f.into()).collect()),
-            Formula::Implies(lhs, rhs) => Formula::Or(vec![Formula::Not(lhs), *rhs]).into(),
+            Formula::And(subs) => NNFFormula::and(subs.into_iter().map(|f| f.into())),
+            Formula::Or(subs) => NNFFormula::or(subs.into_iter().map(|f| f.into())),
+            Formula::Implies(lhs, rhs) => Formula::or([Formula::Not(lhs), *rhs]).into(),
 
             Formula::Until(lhs, int, rhs) => NNFFormula::Until(lhs.into(), int, rhs.into()),
             Formula::Release(lhs, int, rhs) => NNFFormula::Release(lhs.into(), int, rhs.into()),
@@ -165,12 +171,12 @@ impl From<Formula> for NNFFormula {
                 Formula::False => NNFFormula::True,
 
                 Formula::And(subs) => {
-                    NNFFormula::or(subs.into_iter().map(|f| Formula::not(f).into()).collect())
+                    NNFFormula::or(subs.into_iter().map(|f| Formula::not(f).into()))
                 }
                 Formula::Or(subs) => {
-                    NNFFormula::and(subs.into_iter().map(|f| Formula::not(f).into()).collect())
+                    NNFFormula::and(subs.into_iter().map(|f| Formula::not(f).into()))
                 }
-                Formula::Implies(lhs, rhs) => Formula::And(vec![*lhs, Formula::Not(rhs)]).into(),
+                Formula::Implies(lhs, rhs) => Formula::and([*lhs, Formula::Not(rhs)]).into(),
 
                 Formula::Until(lhs, int, rhs) => {
                     NNFFormula::release(Formula::Not(lhs).into(), int, Formula::Not(rhs).into())
@@ -229,7 +235,7 @@ mod test {
         ));
 
         let nnf = NNFFormula::until(
-            NNFFormula::And(vec![
+            NNFFormula::and([
                 NNFFormula::AP("a".to_string(), false),
                 NNFFormula::AP("c".to_string(), true),
             ]),

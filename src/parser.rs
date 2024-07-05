@@ -12,9 +12,9 @@ peg::parser! {
                 --
                 lhs:@ _ implies_operator() _ rhs:(@) { Formula::implies(lhs, rhs) }
                 --
-                lhs:(@) _ or_operator() _ rhs:@ { Formula::or(vec![lhs, rhs]) }
+                lhs:(@) _ or_operator() _ rhs:@ { Formula::or([lhs, rhs]) }
                 --
-                lhs:(@) _ and_operator() _ rhs:@ { Formula::and(vec![lhs, rhs]) }
+                lhs:(@) _ and_operator() _ rhs:@ { Formula::and([lhs, rhs]) }
                 --
                 not_operator() _ sub:@ { Formula::not(sub) }
                 --

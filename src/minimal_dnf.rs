@@ -18,7 +18,7 @@ pub fn min_dnf(nnf: NNFFormula) -> NNFFormula {
             let clauses_with_minimal_literals = clauses
                 .into_iter()
                 .map(|clause| clause.into_iter().map(min_dnf).collect_vec());
-            NNFFormula::or(clauses_with_minimal_literals.map(NNFFormula::and).collect())
+            NNFFormula::or(clauses_with_minimal_literals.map(NNFFormula::and))
         }
     }
 }
@@ -166,25 +166,25 @@ mod test {
         let a = NNFFormula::AP("a".to_string(), false);
         let b = NNFFormula::AP("b".to_string(), false);
         let c = NNFFormula::AP("c".to_string(), false);
-        let phi = NNFFormula::or(vec![
+        let phi = NNFFormula::or([
             a.clone(),
-            NNFFormula::and(vec![
+            NNFFormula::and([
                 a.clone(),
                 NNFFormula::until(NNFFormula::True, Interval::from_endpoints(1, 1), b.clone()),
             ]),
             NNFFormula::until(
                 NNFFormula::True,
                 Interval::from_endpoints(0, 10),
-                NNFFormula::or(vec![b.clone(), c.clone()]),
+                NNFFormula::or([b.clone(), c.clone()]),
             ),
         ]);
 
-        let dnf = NNFFormula::or(vec![
+        let dnf = NNFFormula::or([
             a,
             NNFFormula::until(
                 NNFFormula::True,
                 Interval::from_endpoints(0, 10),
-                NNFFormula::or(vec![b, c]),
+                NNFFormula::or([b, c]),
             ),
         ]);
 
@@ -196,11 +196,11 @@ mod test {
         let a = Formula::AP("a".to_string());
         let b = Formula::AP("b".to_string());
 
-        let phi = Formula::and(vec![Formula::implies(a.clone(), b), a.clone()]);
+        let phi = Formula::and([Formula::implies(a.clone(), b), a.clone()]);
 
-        let dnf = NNFFormula::and(vec![
-            NNFFormula::AP("b".to_string(), false),
+        let dnf = NNFFormula::and([
             NNFFormula::AP("a".to_string(), false),
+            NNFFormula::AP("b".to_string(), false),
         ]);
         assert_eq!(min_dnf(phi.into()), dnf);
     }
