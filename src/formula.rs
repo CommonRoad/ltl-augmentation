@@ -25,7 +25,7 @@ pub enum Formula {
 }
 
 impl Formula {
-    pub fn not(sub: Formula) -> Formula {
+    pub fn negated(sub: Formula) -> Formula {
         Formula::Not(Box::new(sub))
     }
 
@@ -85,15 +85,19 @@ pub enum NNFFormula {
 }
 
 impl NNFFormula {
-    pub fn not(self) -> NNFFormula {
+    pub fn negated(self) -> NNFFormula {
         match self {
             NNFFormula::AP(name, negated) => NNFFormula::AP(name, !negated),
             NNFFormula::True => NNFFormula::False,
             NNFFormula::False => NNFFormula::True,
-            NNFFormula::And(subs) => NNFFormula::or(subs.into_iter().map(|f| f.not())),
-            NNFFormula::Or(subs) => NNFFormula::and(subs.into_iter().map(|f| f.not())),
-            NNFFormula::Until(lhs, int, rhs) => NNFFormula::release(lhs.not(), int, rhs.not()),
-            NNFFormula::Release(lhs, int, rhs) => NNFFormula::until(lhs.not(), int, rhs.not()),
+            NNFFormula::And(subs) => NNFFormula::or(subs.into_iter().map(|f| f.negated())),
+            NNFFormula::Or(subs) => NNFFormula::and(subs.into_iter().map(|f| f.negated())),
+            NNFFormula::Until(lhs, int, rhs) => {
+                NNFFormula::release(lhs.negated(), int, rhs.negated())
+            }
+            NNFFormula::Release(lhs, int, rhs) => {
+                NNFFormula::until(lhs.negated(), int, rhs.negated())
+            }
         }
     }
 
@@ -171,10 +175,10 @@ impl From<Formula> for NNFFormula {
                 Formula::False => NNFFormula::True,
 
                 Formula::And(subs) => {
-                    NNFFormula::or(subs.into_iter().map(|f| Formula::not(f).into()))
+                    NNFFormula::or(subs.into_iter().map(|f| Formula::negated(f).into()))
                 }
                 Formula::Or(subs) => {
-                    NNFFormula::and(subs.into_iter().map(|f| Formula::not(f).into()))
+                    NNFFormula::and(subs.into_iter().map(|f| Formula::negated(f).into()))
                 }
                 Formula::Implies(lhs, rhs) => Formula::and([*lhs, Formula::Not(rhs)]).into(),
 
@@ -208,10 +212,10 @@ mod test {
 
     #[test]
     fn test_nnf_simple() {
-        let formula = Formula::not(Formula::until(
+        let formula = Formula::negated(Formula::until(
             Formula::AP("a".to_string()),
             Interval::Range(3, 5),
-            Formula::not(Formula::AP("b".to_string())),
+            Formula::negated(Formula::AP("b".to_string())),
         ));
 
         let nnf = NNFFormula::release(
@@ -225,12 +229,12 @@ mod test {
 
     #[test]
     fn test_nnf_complex() {
-        let formula = Formula::not(Formula::release(
+        let formula = Formula::negated(Formula::release(
             Formula::implies(Formula::AP("a".to_string()), Formula::AP("c".to_string())),
             Interval::Range(3, 5),
             Formula::finally(
                 Interval::Range(0, 7),
-                Formula::not(Formula::AP("b".to_string())),
+                Formula::negated(Formula::AP("b".to_string())),
             ),
         ));
 

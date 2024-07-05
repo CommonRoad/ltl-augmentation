@@ -70,7 +70,7 @@ fn remove_contradictions(dnf: &mut ClauseSet<NNFFormula>) {
 fn is_contradiction(clause: &Clause<NNFFormula>) -> bool {
     clause
         .iter()
-        .any(|literal| clause.contains(&literal.clone().not()))
+        .any(|literal| clause.contains(&literal.clone().negated()))
 }
 
 fn min_product<T: Clone + Eq + std::hash::Hash + Ord>(

@@ -16,7 +16,7 @@ peg::parser! {
                 --
                 lhs:(@) _ and_operator() _ rhs:@ { Formula::and([lhs, rhs]) }
                 --
-                not_operator() _ sub:@ { Formula::not(sub) }
+                not_operator() _ sub:@ { Formula::negated(sub) }
                 --
                 ap:atomic_proposition() { ap }
                 --
@@ -81,9 +81,9 @@ mod test {
         assert_eq!(
             formula,
             Formula::until(
-                Formula::not(a),
+                Formula::negated(a),
                 Interval::from_endpoints(1, 2),
-                Formula::not(Formula::and(vec![
+                Formula::negated(Formula::and(vec![
                     b,
                     Formula::finally(Interval::from_endpoints(0, 3), c)
                 ]))
