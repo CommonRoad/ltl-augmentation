@@ -81,6 +81,18 @@ pub enum NNFFormula {
 }
 
 impl NNFFormula {
+    pub fn not(self) -> NNFFormula {
+        match self {
+            NNFFormula::AP(name, negated) => NNFFormula::AP(name, !negated),
+            NNFFormula::True => NNFFormula::False,
+            NNFFormula::False => NNFFormula::True,
+            NNFFormula::And(subs) => NNFFormula::or(subs.into_iter().map(|f| f.not()).collect()),
+            NNFFormula::Or(subs) => NNFFormula::and(subs.into_iter().map(|f| f.not()).collect()),
+            NNFFormula::Until(lhs, int, rhs) => NNFFormula::release(lhs.not(), int, rhs.not()),
+            NNFFormula::Release(lhs, int, rhs) => NNFFormula::until(lhs.not(), int, rhs.not()),
+        }
+    }
+
     pub fn and(mut subs: Vec<NNFFormula>) -> NNFFormula {
         match subs.len() {
             0 => NNFFormula::True,

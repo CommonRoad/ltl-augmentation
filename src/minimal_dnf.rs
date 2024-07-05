@@ -1,18 +1,56 @@
 use std::{collections::HashSet, iter::Peekable};
 
-use itertools::Itertools;
+use itertools::{iproduct, Itertools};
 use multimap::MultiMap;
 
 use crate::formula::NNFFormula;
 
-pub fn f(nnf: NNFFormula) -> Vec<Vec<NNFFormula>> {
+pub fn min_dnf(nnf: NNFFormula) -> NNFFormula {
     match nnf {
+        NNFFormula::True | NNFFormula::False | NNFFormula::AP(..) => nnf,
+        NNFFormula::Until(lhs, int, rhs) => NNFFormula::until(min_dnf(*lhs), int, min_dnf(*rhs)),
+        NNFFormula::Release(lhs, int, rhs) => {
+            NNFFormula::release(min_dnf(*lhs), int, min_dnf(*rhs))
+        }
+        _ => {
+            let clauses = min_clause_set(nnf);
+            // Also all temporal "literals" in the DNF should be in minimal DNF
+            let clauses_with_minimal_literals = clauses
+                .into_iter()
+                .map(|clause| clause.into_iter().map(min_dnf).collect_vec());
+            NNFFormula::or(clauses_with_minimal_literals.map(NNFFormula::and).collect())
+        }
+    }
+}
+
+pub fn min_clause_set(nnf: NNFFormula) -> Vec<Vec<NNFFormula>> {
+    let mut dnf = match nnf {
         NNFFormula::True => vec![vec![]],
         NNFFormula::False => vec![],
         NNFFormula::AP(..) | NNFFormula::Until(..) | NNFFormula::Release(..) => vec![vec![nnf]],
-        NNFFormula::And(subs) => subs.into_iter().map(f).reduce(min_product).unwrap(),
-        NNFFormula::Or(subs) => subs.into_iter().map(f).reduce(min_union).unwrap(),
-    }
+        NNFFormula::And(subs) => subs
+            .into_iter()
+            .map(min_clause_set)
+            .reduce(min_product)
+            .unwrap_or(vec![vec![]]),
+        NNFFormula::Or(subs) => subs
+            .into_iter()
+            .map(min_clause_set)
+            .reduce(min_union)
+            .unwrap_or(vec![]),
+    };
+    remove_contradictions(&mut dnf);
+    dnf
+}
+
+fn remove_contradictions(dnf: &mut Vec<Vec<NNFFormula>>) {
+    dnf.retain(|clause| !is_contradiction(&clause))
+}
+
+fn is_contradiction(clause: &Vec<NNFFormula>) -> bool {
+    clause
+        .iter()
+        .any(|literal| clause.contains(&literal.clone().not()))
 }
 
 fn min_product<T: Clone + Eq + std::hash::Hash>(a: Vec<Vec<T>>, b: Vec<Vec<T>>) -> Vec<Vec<T>> {
@@ -34,13 +72,13 @@ fn min_product<T: Clone + Eq + std::hash::Hash>(a: Vec<Vec<T>>, b: Vec<Vec<T>>) 
 
         let mut new_results: Vec<Vec<_>> = Vec::new();
         for (a, b) in iproduct!(vec_a, vec_b) {
-                let union: Vec<_> = a.iter().chain(b.iter()).unique().cloned().collect();
-                if !any_fully_contained(&union, result.iter())
-                    && !any_fully_contained(&union, new_results.iter())
-                {
-                    remove_supersets(&union, &mut result);
-                    remove_supersets(&union, &mut new_results);
-                    new_results.push(union);
+            let union: Vec<_> = a.iter().chain(b.iter()).unique().cloned().collect();
+            if !any_fully_contained(&union, result.iter())
+                && !any_fully_contained(&union, new_results.iter())
+            {
+                remove_supersets(&union, &mut result);
+                remove_supersets(&union, &mut new_results);
+                new_results.push(union);
             }
         }
 
@@ -119,6 +157,54 @@ fn contains_all<T: PartialEq>(a: &[T], b: &[T]) -> bool {
 
 #[cfg(test)]
 mod test {
+    use crate::{formula::Formula, interval::Interval};
+
+    use super::*;
+
+    #[test]
+    fn test_min_dnf() {
+        let a = NNFFormula::AP("a".to_string(), false);
+        let b = NNFFormula::AP("b".to_string(), false);
+        let c = NNFFormula::AP("c".to_string(), false);
+        let phi = NNFFormula::or(vec![
+            a.clone(),
+            NNFFormula::and(vec![
+                a.clone(),
+                NNFFormula::until(NNFFormula::True, Interval::from_endpoints(1, 1), b.clone()),
+            ]),
+            NNFFormula::until(
+                NNFFormula::True,
+                Interval::from_endpoints(0, 10),
+                NNFFormula::or(vec![b.clone(), c.clone()]),
+            ),
+        ]);
+
+        let dnf = NNFFormula::or(vec![
+            a,
+            NNFFormula::until(
+                NNFFormula::True,
+                Interval::from_endpoints(0, 10),
+                NNFFormula::or(vec![b, c]),
+            ),
+        ]);
+
+        assert_eq!(min_dnf(phi), dnf);
+    }
+
+    #[test]
+    fn test_min_dnf2() {
+        let a = Formula::AP("a".to_string());
+        let b = Formula::AP("b".to_string());
+
+        let phi = Formula::and(vec![Formula::implies(a.clone(), b), a.clone()]);
+
+        let dnf = NNFFormula::and(vec![
+            NNFFormula::AP("b".to_string(), false),
+            NNFFormula::AP("a".to_string(), false),
+        ]);
+        assert_eq!(min_dnf(phi.into()), dnf);
+    }
+
     #[test]
     fn test_min_union() {
         let a = vec![vec![1], vec![1, 2, 3]];
