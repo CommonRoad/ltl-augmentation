@@ -1,6 +1,10 @@
 use multimap::MultiMap;
 
-use crate::{formula::NNFFormula, interval::Interval};
+use crate::{formula::NNFFormula, interval::Interval, minimal_dnf::min_dnf};
+
+pub fn rewrite(nnf: NNFFormula) -> NNFFormula {
+    min_dnf(combine_temporal(nnf))
+}
 
 pub fn combine_temporal(nnf: NNFFormula) -> NNFFormula {
     match nnf {
@@ -96,72 +100,31 @@ fn grouped_interval_merge(
 
 #[cfg(test)]
 mod test {
-    use crate::{formula::Formula, minimal_dnf::min_dnf};
+    use crate::parser::mltl_parser;
 
     use super::*;
 
     #[test]
     fn test_rewrite() {
-        let phi = NNFFormula::And(vec![
-            NNFFormula::until(
-                NNFFormula::AP("a".to_string(), true),
-                Interval::from_endpoints(1, 4),
-                NNFFormula::AP("c".to_string(), true),
-            ),
-            NNFFormula::until(
-                NNFFormula::AP("b".to_string(), true),
-                Interval::from_endpoints(3, 10),
-                NNFFormula::AP("c".to_string(), true),
-            ),
-        ]);
+        let phi =
+            mltl_parser::formula("(a U[1, 4] c) & (b U[3, 10] c)").expect("Syntax is correct");
 
-        let rewritten = min_dnf(combine_temporal(phi));
+        let expected = mltl_parser::formula("(a U[1, 2] c) & (a & b U[3, 4] c) & (b U[5, 10] c)")
+            .expect("Syntax is correct");
+        let rewritten = rewrite(phi.into());
 
-        assert_eq!(
-            rewritten,
-            NNFFormula::And(vec![
-                NNFFormula::until(
-                    NNFFormula::AP("a".to_string(), true),
-                    Interval::from_endpoints(1, 2),
-                    NNFFormula::AP("c".to_string(), true),
-                ),
-                NNFFormula::until(
-                    NNFFormula::And(vec![
-                        NNFFormula::AP("a".to_string(), true),
-                        NNFFormula::AP("b".to_string(), true),
-                    ]),
-                    Interval::from_endpoints(3, 4),
-                    NNFFormula::AP("c".to_string(), true),
-                ),
-                NNFFormula::until(
-                    NNFFormula::AP("b".to_string(), true),
-                    Interval::from_endpoints(5, 10),
-                    NNFFormula::AP("c".to_string(), true),
-                ),
-            ])
-        )
+        assert_eq!(rewritten, expected.into(),)
     }
 
     #[test]
     fn test_rewrite2() {
-        let phi = Formula::and(vec![
-            Formula::globally(
-                Interval::from_endpoints(0, 10),
-                Formula::implies(Formula::AP("a".to_string()), Formula::AP("b".to_string())),
-            ),
-            Formula::globally(
-                Interval::from_endpoints(0, 11),
-                Formula::AP("a".to_string()),
-            ),
-        ]);
+        let phi =
+            mltl_parser::formula("(G[0, 10] a -> b) & G[0, 11] a").expect("Syntax is correct");
 
-        let nnf = NNFFormula::from(phi);
-        dbg!(&nnf);
+        let expected =
+            mltl_parser::formula("(G[0, 10] b & a) & G[11, 11] a").expect("Syntax is correct");
+        let rewritten = rewrite(phi.into());
 
-        let combined = combine_temporal(nnf);
-        dbg!(&combined);
-
-        let rewritten = min_dnf(combined);
-        dbg!(&rewritten);
+        assert_eq!(rewritten, expected.into())
     }
 }

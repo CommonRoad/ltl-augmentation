@@ -1,7 +1,7 @@
 use crate::{formula::Formula, interval::Interval};
 
 peg::parser! {
-    grammar mltl_parser() for str {
+    pub grammar mltl_parser() for str {
         pub rule formula() -> Formula
             = precedence! {
                 lhs:@ __ int:until_operator() __ rhs:(@) { Formula::until(lhs, int, rhs) }
