@@ -1,12 +1,12 @@
 use multimap::MultiMap;
 
-use crate::{formula::NNFFormula, interval::Interval};
+use crate::{formula::NNFFormula, interval::Interval, minimal_dnf::min_dnf};
 
-pub fn rewrite(nnf: NNFFormula) -> NNFFormula {
+pub fn combine_temporal(nnf: NNFFormula) -> NNFFormula {
     match nnf {
         NNFFormula::And(subs) => {
             // Rewrite all subformulas
-            let subs = subs.into_iter().map(rewrite);
+            let subs = subs.into_iter().map(combine_temporal);
             // Extract untils and releases
             let (untils, releases, mut rest) = extract_until_and_release(subs);
 
@@ -34,7 +34,7 @@ pub fn rewrite(nnf: NNFFormula) -> NNFFormula {
         }
         NNFFormula::Or(subs) => {
             // Rewrite all subformulas
-            let subs = subs.into_iter().map(rewrite);
+            let subs = subs.into_iter().map(combine_temporal);
             // Extract untils and releases
             let (untils, releases, mut rest) = extract_until_and_release(subs);
 
@@ -60,9 +60,11 @@ pub fn rewrite(nnf: NNFFormula) -> NNFFormula {
             rest.extend(new_releases);
             NNFFormula::or(rest)
         }
-        NNFFormula::Until(lhs, int, rhs) => NNFFormula::until(rewrite(*lhs), int, rewrite(*rhs)),
+        NNFFormula::Until(lhs, int, rhs) => {
+            NNFFormula::until(combine_temporal(*lhs), int, combine_temporal(*rhs))
+        }
         NNFFormula::Release(lhs, int, rhs) => {
-            NNFFormula::release(rewrite(*lhs), int, rewrite(*rhs))
+            NNFFormula::release(combine_temporal(*lhs), int, combine_temporal(*rhs))
         }
         _ => nnf,
     }
@@ -94,6 +96,8 @@ fn grouped_interval_merge(
 
 #[cfg(test)]
 mod test {
+    use crate::formula::Formula;
+
     use super::*;
 
     #[test]
@@ -111,7 +115,7 @@ mod test {
             ),
         ]);
 
-        let rewritten = rewrite(phi);
+        let rewritten = min_dnf(combine_temporal(phi));
 
         assert_eq!(
             rewritten,
@@ -136,5 +140,28 @@ mod test {
                 ),
             ])
         )
+    }
+
+    #[test]
+    fn test_rewrite2() {
+        let phi = Formula::and(vec![
+            Formula::globally(
+                Interval::from_endpoints(0, 10),
+                Formula::implies(Formula::AP("a".to_string()), Formula::AP("b".to_string())),
+            ),
+            Formula::globally(
+                Interval::from_endpoints(0, 11),
+                Formula::AP("a".to_string()),
+            ),
+        ]);
+
+        let nnf = NNFFormula::from(phi);
+        dbg!(&nnf);
+
+        let combined = combine_temporal(nnf);
+        dbg!(&combined);
+
+        let rewritten = min_dnf(combined);
+        dbg!(&rewritten);
     }
 }
