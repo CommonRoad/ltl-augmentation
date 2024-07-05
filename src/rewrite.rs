@@ -1,6 +1,6 @@
 use multimap::MultiMap;
 
-use crate::{formula::NNFFormula, interval::Interval, minimal_dnf::min_dnf};
+use crate::{formula::NNFFormula, interval::Interval};
 
 pub fn combine_temporal(nnf: NNFFormula) -> NNFFormula {
     match nnf {
@@ -96,7 +96,7 @@ fn grouped_interval_merge(
 
 #[cfg(test)]
 mod test {
-    use crate::formula::Formula;
+    use crate::{formula::Formula, minimal_dnf::min_dnf};
 
     use super::*;
 

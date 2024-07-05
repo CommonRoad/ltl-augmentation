@@ -44,10 +44,10 @@ pub fn min_clause_set(nnf: NNFFormula) -> Vec<Vec<NNFFormula>> {
 }
 
 fn remove_contradictions(dnf: &mut Vec<Vec<NNFFormula>>) {
-    dnf.retain(|clause| !is_contradiction(&clause))
+    dnf.retain(|clause| !is_contradiction(clause))
 }
 
-fn is_contradiction(clause: &Vec<NNFFormula>) -> bool {
+fn is_contradiction(clause: &[NNFFormula]) -> bool {
     clause
         .iter()
         .any(|literal| clause.contains(&literal.clone().not()))
@@ -86,14 +86,14 @@ fn min_product<T: Clone + Eq + std::hash::Hash>(a: Vec<Vec<T>>, b: Vec<Vec<T>>) 
         for (size, vec) in a_by_size.iter_all_mut() {
             if size > &size_a {
                 new_results.iter().for_each(|new| {
-                    remove_supersets(&new, vec);
+                    remove_supersets(new, vec);
                 });
             }
         }
         for (size, vec) in b_by_size.iter_all_mut() {
             if size > &size_b {
                 new_results.iter().for_each(|new| {
-                    remove_supersets(&new, vec);
+                    remove_supersets(new, vec);
                 });
             }
         }
@@ -126,7 +126,7 @@ fn min_union<T: Ord>(mut a: Vec<Vec<T>>, mut b: Vec<Vec<T>>) -> Vec<Vec<T>> {
 fn add_all_of_size_if_no_smaller_exists<T: Eq>(
     size: usize,
     to_add: &mut Peekable<impl Iterator<Item = Vec<T>>>,
-    existing: &Vec<Vec<T>>,
+    existing: &[Vec<T>],
     out: &mut Vec<Vec<T>>,
 ) {
     while let Some(v) = to_add.peek() {
@@ -140,15 +140,15 @@ fn add_all_of_size_if_no_smaller_exists<T: Eq>(
     }
 }
 
-fn remove_supersets<T: PartialEq>(subset: &Vec<T>, sets: &mut Vec<Vec<T>>) {
-    sets.retain(|set| !contains_all(set, &subset));
+fn remove_supersets<T: PartialEq>(subset: &[T], sets: &mut Vec<Vec<T>>) {
+    sets.retain(|set| !contains_all(set, subset));
 }
 
 fn any_fully_contained<'a, T: PartialEq + 'a>(
     a: &[T],
     mut bs: impl Iterator<Item = &'a Vec<T>>,
 ) -> bool {
-    bs.any(|b| contains_all(a, &b))
+    bs.any(|b| contains_all(a, b))
 }
 
 fn contains_all<T: PartialEq>(a: &[T], b: &[T]) -> bool {

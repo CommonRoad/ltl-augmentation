@@ -30,10 +30,7 @@ impl Interval {
     }
 
     pub fn is_empty(&self) -> bool {
-        match self {
-            Interval::Empty => true,
-            _ => false,
-        }
+        matches!(self, Interval::Empty)
     }
 
     pub fn intersect(&self, other: &Interval) -> Interval {
@@ -86,7 +83,7 @@ impl Interval {
 
         let mut merged = Vec::new();
         let mut active = Vec::new();
-        let mut start = 0 as u32;
+        let mut start = 0_u32;
         for (time, is_entry, val) in events {
             // Entry events complete the interval until time - 1 (because it becomes active at time)
             // Exit events complete the interval until time (because it becomes inactive at time)
