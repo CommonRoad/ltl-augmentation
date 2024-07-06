@@ -101,6 +101,32 @@ impl NNFFormula {
         }
     }
 
+    pub fn is_negation_of(&self, other: &NNFFormula) -> bool {
+        match (self, other) {
+            (NNFFormula::AP(name1, negated1), NNFFormula::AP(name2, negated2))
+                if name1 == name2 =>
+            {
+                negated1 != negated2
+            }
+            (NNFFormula::True, NNFFormula::False) | (NNFFormula::False, NNFFormula::True) => true,
+            (NNFFormula::And(subs1), NNFFormula::Or(subs2))
+            | (NNFFormula::Or(subs1), NNFFormula::And(subs2))
+                if subs1.len() == subs2.len() =>
+            {
+                subs1
+                    .iter()
+                    .all(|f1| subs2.iter().any(|f2| f1.is_negation_of(f2)))
+            }
+            (NNFFormula::Until(lhs1, int1, rhs1), NNFFormula::Release(lhs2, int2, rhs2))
+            | (NNFFormula::Release(lhs1, int1, rhs1), NNFFormula::Until(lhs2, int2, rhs2))
+                if int1 == int2 =>
+            {
+                lhs1.is_negation_of(lhs2) && rhs1.is_negation_of(rhs2)
+            }
+            _ => false,
+        }
+    }
+
     pub fn and(subs: impl IntoIterator<Item = NNFFormula>) -> NNFFormula {
         let mut subs: BTreeSet<_> = subs.into_iter().collect();
         match subs.len() {

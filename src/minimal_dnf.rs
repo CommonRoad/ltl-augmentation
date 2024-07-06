@@ -1,15 +1,15 @@
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
+    hash::Hash,
     iter::Peekable,
 };
 
 use itertools::{iproduct, Itertools};
-use multimap::MultiMap;
 
 use crate::formula::NNFFormula;
 
 type Clause<T> = BTreeSet<T>;
-type ClauseSet<T> = BTreeSet<Clause<T>>;
+type ClauseSet<T> = HashSet<Clause<T>>;
 
 pub fn min_dnf(nnf: NNFFormula) -> NNFFormula {
     match nnf {
@@ -51,16 +51,16 @@ pub fn min_clause_set(nnf: NNFFormula) -> ClauseSet<NNFFormula> {
     dnf
 }
 
-fn make_true_clause_set<T: Ord>() -> ClauseSet<T> {
-    BTreeSet::from([BTreeSet::new()])
+fn make_true_clause_set<T: Ord + Hash>() -> ClauseSet<T> {
+    ClauseSet::from([Clause::new()])
 }
 
 fn make_false_clause_set<T>() -> ClauseSet<T> {
-    BTreeSet::new()
+    ClauseSet::new()
 }
 
-fn make_literal_clause_set<T: Ord>(literal: T) -> ClauseSet<T> {
-    BTreeSet::from([BTreeSet::from([literal])])
+fn make_literal_clause_set<T: Ord + Hash>(literal: T) -> ClauseSet<T> {
+    ClauseSet::from([Clause::from([literal])])
 }
 
 fn remove_contradictions(dnf: &mut ClauseSet<NNFFormula>) {
@@ -70,64 +70,55 @@ fn remove_contradictions(dnf: &mut ClauseSet<NNFFormula>) {
 fn is_contradiction(clause: &Clause<NNFFormula>) -> bool {
     clause
         .iter()
-        .any(|literal| clause.contains(&literal.clone().negated()))
+        .any(|literal| clause.iter().any(|other| other.is_negation_of(literal)))
 }
 
-fn min_product<T: Clone + Eq + std::hash::Hash + Ord>(
-    a: ClauseSet<T>,
-    b: ClauseSet<T>,
-) -> ClauseSet<T> {
-    let mut a_by_size: MultiMap<_, Clause<T>> = a.into_iter().map(|v| (v.len(), v)).collect();
-    let mut b_by_size: MultiMap<_, Clause<T>> = b.into_iter().map(|v| (v.len(), v)).collect();
+fn min_product<T: Clone + Hash + Ord>(a: ClauseSet<T>, b: ClauseSet<T>) -> ClauseSet<T> {
+    let mut a_by_size: BTreeMap<usize, ClauseSet<T>> = BTreeMap::new();
+    a.into_iter().for_each(|clause| {
+        a_by_size.entry(clause.len()).or_default().insert(clause);
+    });
+    let mut b_by_size: BTreeMap<usize, ClauseSet<T>> = BTreeMap::new();
+    b.into_iter().for_each(|clause| {
+        b_by_size.entry(clause.len()).or_default().insert(clause);
+    });
 
-    let sizes: HashSet<_> = iproduct!(a_by_size.keys().copied(), b_by_size.keys().copied())
-        .sorted_unstable_by_key(|(a, b)| a + b)
-        .collect();
+    let mut results = ClauseSet::new();
 
-    let mut result: ClauseSet<T> = BTreeSet::new();
+    // We want to process the smallest clauses first, as this improves our chances of excluding larger clauses later on
+    let sizes = iproduct!(a_by_size.keys().copied(), b_by_size.keys().copied())
+        .sorted_unstable_by_key(|(a, b)| a + b); // a + b overestimates the size of the union
     for (size_a, size_b) in sizes {
-        let vec_a = a_by_size
-            .get_vec(&size_a)
-            .expect("size_a is from the key set");
-        let vec_b = b_by_size
-            .get_vec(&size_b)
-            .expect("size_b is from the key set");
+        let mut new_results = ClauseSet::new();
 
-        let mut new_results: ClauseSet<T> = BTreeSet::new();
-        for (a, b) in iproduct!(vec_a, vec_b) {
-            let union = a.iter().chain(b.iter()).unique().cloned().collect();
-            if !any_fully_contained(&union, result.iter())
-                && !any_fully_contained(&union, new_results.iter())
-            {
-                remove_supersets(&union, &mut result);
+        let clauses_a = a_by_size.get(&size_a).expect("size_a is from the key set");
+        let clauses_b = b_by_size.get(&size_b).expect("size_b is from the key set");
+        for (clause_a, clause_b) in iproduct!(clauses_a, clauses_b) {
+            let union = clause_a.union(clause_b).cloned().collect();
+            // If there is not already a smaller clause in the results, remove all supersets and add the union
+            if !any_is_subset(&union, &results) && !any_is_subset(&union, &new_results) {
+                remove_supersets(&union, &mut results);
                 remove_supersets(&union, &mut new_results);
                 new_results.insert(union);
             }
         }
 
-        // In the future we can skip all sets that are supersets of one of our results
-        for (size, vec) in a_by_size.iter_all_mut() {
-            if size > &size_a {
-                new_results.iter().for_each(|new| {
-                    remove_supersets_vec(new, vec);
-                });
-            }
-        }
-        for (size, vec) in b_by_size.iter_all_mut() {
-            if size > &size_b {
-                new_results.iter().for_each(|new| {
-                    remove_supersets_vec(new, vec);
+        // In the future we can skip all sets that are supersets of one of our new results
+        for clause in &new_results {
+            for map in [&mut a_by_size, &mut b_by_size] {
+                map.range_mut(clause.len()..).for_each(|(_, clause_set)| {
+                    remove_supersets(clause, clause_set);
                 });
             }
         }
 
-        result.append(&mut new_results);
+        results.extend(new_results);
     }
 
-    result
+    results
 }
 
-fn min_union<T: Ord>(a: ClauseSet<T>, b: ClauseSet<T>) -> ClauseSet<T> {
+fn min_union<T: Ord + Hash>(a: ClauseSet<T>, b: ClauseSet<T>) -> ClauseSet<T> {
     let mut a = a
         .into_iter()
         .sorted_unstable_by_key(|clause| clause.len())
@@ -137,8 +128,8 @@ fn min_union<T: Ord>(a: ClauseSet<T>, b: ClauseSet<T>) -> ClauseSet<T> {
         .sorted_unstable_by_key(|clause| clause.len())
         .peekable();
 
-    let mut from_a: ClauseSet<T> = BTreeSet::new();
-    let mut from_b: ClauseSet<T> = BTreeSet::new();
+    let mut from_a = ClauseSet::new();
+    let mut from_b = ClauseSet::new();
     let mut current_size = 0;
     while a.peek().is_some() || b.peek().is_some() {
         add_all_of_size_if_no_smaller_exists(current_size, &mut a, &from_b, &mut from_a);
@@ -150,7 +141,7 @@ fn min_union<T: Ord>(a: ClauseSet<T>, b: ClauseSet<T>) -> ClauseSet<T> {
     from_a
 }
 
-fn add_all_of_size_if_no_smaller_exists<T: Ord>(
+fn add_all_of_size_if_no_smaller_exists<T: Ord + Hash>(
     size: usize,
     to_add: &mut Peekable<impl Iterator<Item = Clause<T>>>,
     existing: &ClauseSet<T>,
@@ -161,29 +152,21 @@ fn add_all_of_size_if_no_smaller_exists<T: Ord>(
             break;
         }
         let v = to_add.next().expect("Peeked value is not None");
-        if !existing.iter().any(|b| contains_all(&v, b)) {
+        if !any_is_subset(&v, existing) {
             out.insert(v);
         }
     }
 }
 
 fn remove_supersets<T: Ord>(subset: &Clause<T>, sets: &mut ClauseSet<T>) {
-    sets.retain(|set| !contains_all(set, subset));
+    sets.retain(|set| !subset.is_subset(set));
 }
 
-fn remove_supersets_vec<T: Ord>(subset: &Clause<T>, sets: &mut Vec<Clause<T>>) {
-    sets.retain(|set| !contains_all(set, subset));
-}
-
-fn any_fully_contained<'a, T: Ord + 'a>(
+fn any_is_subset<'a, T: Ord + 'a>(
     a: &Clause<T>,
-    mut bs: impl Iterator<Item = &'a Clause<T>>,
+    bs: impl IntoIterator<Item = &'a Clause<T>>,
 ) -> bool {
-    bs.any(|b| contains_all(a, b))
-}
-
-fn contains_all<T: Ord>(a: &Clause<T>, b: &Clause<T>) -> bool {
-    b.iter().all(|x| a.contains(x))
+    bs.into_iter().any(|b| b.is_subset(a))
 }
 
 #[cfg(test)]
@@ -238,17 +221,17 @@ mod test {
 
     #[test]
     fn test_min_union() {
-        let a = BTreeSet::from([BTreeSet::from([1]), BTreeSet::from([1, 2, 3])]);
-        let b = BTreeSet::from([BTreeSet::from([2, 3]), BTreeSet::from([1, 2])]);
-        let c = BTreeSet::from([BTreeSet::from([1]), BTreeSet::from([2, 3])]);
+        let a = ClauseSet::from([Clause::from([1]), Clause::from([1, 2, 3])]);
+        let b = ClauseSet::from([Clause::from([2, 3]), Clause::from([1, 2])]);
+        let c = ClauseSet::from([Clause::from([1]), Clause::from([2, 3])]);
         assert_eq!(super::min_union(a, b), c);
     }
 
     #[test]
     fn test_min_product() {
-        let a = BTreeSet::from([BTreeSet::from([1]), BTreeSet::from([1, 2, 3])]);
-        let b = BTreeSet::from([BTreeSet::from([2, 3]), BTreeSet::from([1, 2])]);
-        let c = BTreeSet::from([BTreeSet::from([1, 2])]);
+        let a = ClauseSet::from([Clause::from([1]), Clause::from([1, 2, 3])]);
+        let b = ClauseSet::from([Clause::from([2, 3]), Clause::from([1, 2])]);
+        let c = ClauseSet::from([Clause::from([1, 2])]);
         assert_eq!(super::min_product(a, b), c);
     }
 }
