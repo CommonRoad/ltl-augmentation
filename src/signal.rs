@@ -88,7 +88,12 @@ impl<T: Ord + From<u32> + Copy, V: Default> Signal<T, V> {
                     value: op(&self_cur.value, &other_cur.value),
                 },
             };
-            values.insert(signal_value);
+            if values
+                .last()
+                .map_or(true, |v: &SignalValue<T, W>| v.value != signal_value.value)
+            {
+                values.insert(signal_value);
+            }
 
             // Store condition for other, as we might change self_dry below
             let advance_other = matches!(cmp, Ordering::Greater | Ordering::Equal) || self_dry;
@@ -165,7 +170,7 @@ mod test {
         let mut signal2 = Signal::new();
         signal2.values.insert(SignalValue {
             time: 1_u32,
-            value: 10,
+            value: -1,
         });
         signal2.values.insert(SignalValue {
             time: 2_u32,
@@ -180,8 +185,7 @@ mod test {
         assert_eq!(
             combined_intervals,
             vec![
-                (Interval::Bounded { lb: 0, ub: 0 }, 0),
-                (Interval::Bounded { lb: 1, ub: 1 }, 11),
+                (Interval::Bounded { lb: 0, ub: 1 }, 0),
                 (Interval::Bounded { lb: 2, ub: 2 }, 21),
                 (Interval::Bounded { lb: 3, ub: 4 }, 23),
                 (Interval::Bounded { lb: 5, ub: 5 }, 25),
