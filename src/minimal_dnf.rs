@@ -171,52 +171,23 @@ fn any_is_subset<'a, T: Ord + 'a>(
 
 #[cfg(test)]
 mod test {
-    use crate::{formula::Formula, interval::Interval};
+    use crate::parser::mltl_parser;
 
     use super::*;
 
     #[test]
     fn test_min_dnf() {
-        let a = NNFFormula::AP("a".to_string(), false);
-        let b = NNFFormula::AP("b".to_string(), false);
-        let c = NNFFormula::AP("c".to_string(), false);
-        let phi = NNFFormula::or([
-            a.clone(),
-            NNFFormula::and([
-                a.clone(),
-                NNFFormula::until(NNFFormula::True, Interval::from_endpoints(1, 1), b.clone()),
-            ]),
-            NNFFormula::until(
-                NNFFormula::True,
-                Interval::from_endpoints(0, 10),
-                NNFFormula::or([b.clone(), c.clone()]),
-            ),
-        ]);
-
-        let dnf = NNFFormula::or([
-            a,
-            NNFFormula::until(
-                NNFFormula::True,
-                Interval::from_endpoints(0, 10),
-                NNFFormula::or([b, c]),
-            ),
-        ]);
-
-        assert_eq!(min_dnf(phi), dnf);
+        let phi = mltl_parser::formula("a | (a & F[1, 1] b) | (F[0, 10] (b | c))")
+            .expect("Syntax is correct");
+        let dnf = mltl_parser::formula("a | (F[0, 10] (b | c))").expect("Syntax is correct");
+        assert_eq!(min_dnf(phi.into()), dnf.into());
     }
 
     #[test]
     fn test_min_dnf2() {
-        let a = Formula::AP("a".to_string());
-        let b = Formula::AP("b".to_string());
-
-        let phi = Formula::and([Formula::implies(a.clone(), b), a.clone()]);
-
-        let dnf = NNFFormula::and([
-            NNFFormula::AP("a".to_string(), false),
-            NNFFormula::AP("b".to_string(), false),
-        ]);
-        assert_eq!(min_dnf(phi.into()), dnf);
+        let phi = mltl_parser::formula("(a -> b) & a").expect("Syntax is correct");
+        let dnf = mltl_parser::formula("a & b").expect("Syntax is correct");
+        assert_eq!(min_dnf(phi.into()), dnf.into());
     }
 
     #[test]
