@@ -1,4 +1,6 @@
-use std::ops::Add;
+use std::{collections::BTreeSet, ops::Add};
+
+use itertools::Itertools;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Interval {
@@ -60,6 +62,29 @@ impl Interval {
             }
             _ => (*self, Interval::empty()),
         }
+    }
+
+    pub fn union_all(intervals: impl IntoIterator<Item = Interval>) -> Vec<Interval> {
+        let mut sorted_non_empty = intervals
+            .into_iter()
+            .filter_map(|i| match i {
+                Interval::Range(start, end) => Some((start, end)),
+                Interval::Empty => None,
+            })
+            .sorted_unstable();
+        let mut result = Vec::new();
+        if let Some(mut current) = sorted_non_empty.next() {
+            for (start, end) in sorted_non_empty {
+                if start <= current.1 + 1 {
+                    current.1 = current.1.max(end);
+                } else {
+                    result.push(Interval::Range(current.0, current.1));
+                    current = (start, end);
+                }
+            }
+            result.push(Interval::Range(current.0, current.1));
+        }
+        result
     }
 
     pub fn merge<T: Clone + std::cmp::Eq>(
@@ -124,14 +149,128 @@ impl Add for Interval {
     }
 }
 
+pub struct IntervalSet {
+    bounds: BTreeSet<(u32, bool)>,
+}
+
+impl IntervalSet {
+    pub fn new() -> IntervalSet {
+        IntervalSet {
+            bounds: BTreeSet::new(),
+        }
+    }
+
+    pub fn add(&mut self, interval: &Interval) {
+        match interval {
+            Interval::Range(start, end) => {
+                self.set(*start, end + 1, true);
+            }
+            Interval::Empty => (),
+        }
+    }
+
+    pub fn remove(&mut self, interval: &Interval) {
+        match interval {
+            Interval::Range(start, end) => {
+                self.set(*start, end + 1, false);
+            }
+            Interval::Empty => (),
+        }
+    }
+
+    fn set(&mut self, lb: u32, ub: u32, included: bool) {
+        let lb = (lb, included);
+        let ub = (ub, !included);
+
+        // Remove everything between lb and ub
+        self.bounds.retain(|x| x < &lb || x > &ub);
+
+        // Find the next smaller bound
+        let left = self.bounds.range(..lb).next_back().copied();
+        match left {
+            // Opening bound: New interval is extended to the left, so do nothing
+            Some((_, opening)) if opening == included => (),
+            // Closing bound exactly at lb: New interval connects to the left, so remove the separating bound
+            Some(bound @ (x, opening)) if opening != included && x == lb.0 => {
+                self.bounds.remove(&bound);
+            }
+            // Otherwise: There is a gap between new interval and left, so insert the bound
+            _ => {
+                self.bounds.insert(lb);
+            }
+        };
+
+        let right = self.bounds.range(ub..).next().copied();
+        match right {
+            // Closing bound: New interval is extended to the right, so do nothing
+            Some((_, opening)) if opening != included => (),
+            // Opening bound exactly at ub: New interval connects to the right, so remove the separating bound
+            Some(bound @ (x, opening)) if opening == included && x == ub.0 => {
+                self.bounds.remove(&bound);
+            }
+            // Otherwise: There is a gap between new interval and right, so insert the bound
+            _ => {
+                self.bounds.insert(ub);
+            }
+        };
+    }
+
+    pub fn get_intervals(&self) -> Vec<Interval> {
+        self.bounds
+            .iter()
+            .chunks(2)
+            .into_iter()
+            .map(|chunk| {
+                let ((start, _), (end, _)) = chunk
+                    .collect_tuple()
+                    .expect("Number of bounds is always even");
+                Interval::from_endpoints(*start, end - 1)
+            })
+            .collect()
+    }
+}
+
+impl Default for IntervalSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl From<Interval> for IntervalSet {
+    fn from(interval: Interval) -> IntervalSet {
+        match interval {
+            Interval::Empty => IntervalSet::new(),
+            Interval::Range(start, end) => IntervalSet {
+                bounds: BTreeSet::from([(start, true), (end + 1, false)]),
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use std::collections::HashSet;
 
     #[test]
-    fn test() {
-        assert!(true > false);
+    fn test_union_all() {
+        let intervals = [
+            Interval::from_endpoints(1, 3),
+            Interval::from_endpoints(1, 4),
+            Interval::from_endpoints(8, 10),
+            Interval::from_endpoints(5, 6),
+            Interval::from_endpoints(9, 11),
+            Interval::from_endpoints(20, 100),
+        ];
+        let union = Interval::union_all(intervals);
+        assert_eq!(
+            union,
+            vec![
+                Interval::from_endpoints(1, 6),
+                Interval::from_endpoints(8, 11),
+                Interval::from_endpoints(20, 100)
+            ]
+        );
     }
 
     #[test]
@@ -154,6 +293,35 @@ mod test {
             ]
             .into_iter()
             .collect::<HashSet<_>>()
+        );
+    }
+
+    #[test]
+    fn test_interval_set() {
+        let mut is = IntervalSet::new();
+        assert!(is.get_intervals().is_empty());
+
+        let i1 = Interval::from_endpoints(0, 10);
+        is.add(&i1);
+        assert_eq!(is.get_intervals(), vec![i1]);
+
+        is.add(&Interval::from_endpoints(3, 4));
+        assert_eq!(is.get_intervals(), vec![i1]);
+
+        let i2 = Interval::from_endpoints(20, 30);
+        is.add(&i2);
+        assert_eq!(is.get_intervals(), vec![i1, i2]);
+
+        is.add(&Interval::from_endpoints(11, 19));
+        assert_eq!(is.get_intervals(), vec![Interval::from_endpoints(0, 30)]);
+
+        is.remove(&Interval::from_endpoints(11, 19));
+        assert_eq!(is.get_intervals(), vec![i1, i2]);
+
+        is.add(&Interval::from_endpoints(30, 40));
+        assert_eq!(
+            is.get_intervals(),
+            vec![i1, Interval::from_endpoints(20, 40)]
         );
     }
 }
