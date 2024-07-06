@@ -1,4 +1,11 @@
-use std::{cmp::Ordering, collections::BTreeSet, hash::Hash};
+use std::{cmp::Ordering, collections::BTreeSet, hash::Hash, ops::Sub};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Interval<T> {
+    Empty,
+    Bounded { lb: T, ub: T },
+    Unbounded { lb: T },
+}
 
 #[derive(Debug, Clone, Copy)]
 struct SignalValue<T, V> {
@@ -32,6 +39,7 @@ impl<T: Hash, V> Hash for SignalValue<T, V> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Signal<T, V> {
     values: BTreeSet<SignalValue<T, V>>,
 }
@@ -106,6 +114,28 @@ impl<T: Ord + From<u32> + Copy, V: Default> Signal<T, V> {
     }
 }
 
+impl<T: Copy + Sub<u32, Output = T>, V> Signal<T, V> {
+    pub fn into_intervals(self) -> Vec<(Interval<T>, V)> {
+        let mut result = Vec::with_capacity(self.values.len());
+        let mut it = self.values.into_iter().peekable();
+        while let Some(v1) = it.next() {
+            if let Some(v2) = it.peek() {
+                result.push((
+                    Interval::Bounded {
+                        lb: v1.time,
+                        ub: v2.time - 1,
+                    },
+                    v1.value,
+                ));
+            } else {
+                // Last element
+                result.push((Interval::Unbounded { lb: v1.time }, v1.value));
+            }
+        }
+        result
+    }
+}
+
 impl<T: Ord + From<u32> + Copy, V: Default> Default for Signal<T, V> {
     fn default() -> Self {
         Signal::new()
@@ -124,12 +154,12 @@ mod test {
             value: 1,
         });
         signal1.values.insert(SignalValue {
-            time: 2_u32,
-            value: 2,
-        });
-        signal1.values.insert(SignalValue {
             time: 3_u32,
             value: 3,
+        });
+        signal1.values.insert(SignalValue {
+            time: 5_u32,
+            value: 5,
         });
 
         let mut signal2 = Signal::new();
@@ -142,16 +172,21 @@ mod test {
             value: 20,
         });
         signal2.values.insert(SignalValue {
-            time: 4_u32,
-            value: 30,
+            time: 6_u32,
+            value: 60,
         });
 
-        let signal3 = signal1.combine(signal2, |a, b| a + b);
-        let mut signal3 = signal3.values.into_iter();
-        assert_eq!(signal3.next().unwrap().value, 0);
-        assert_eq!(signal3.next().unwrap().value, 11);
-        assert_eq!(signal3.next().unwrap().value, 22);
-        assert_eq!(signal3.next().unwrap().value, 23);
-        assert_eq!(signal3.next().unwrap().value, 33);
+        let combined_intervals = signal1.combine(signal2, |a, b| a + b).into_intervals();
+        assert_eq!(
+            combined_intervals,
+            vec![
+                (Interval::Bounded { lb: 0, ub: 0 }, 0),
+                (Interval::Bounded { lb: 1, ub: 1 }, 11),
+                (Interval::Bounded { lb: 2, ub: 2 }, 21),
+                (Interval::Bounded { lb: 3, ub: 4 }, 23),
+                (Interval::Bounded { lb: 5, ub: 5 }, 25),
+                (Interval::Unbounded { lb: 6 }, 65)
+            ]
+        )
     }
 }
