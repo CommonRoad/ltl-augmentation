@@ -60,61 +60,50 @@ impl<T: Ord + From<u32> + Copy, V: Default> Signal<T, V> {
     {
         let mut values = BTreeSet::new();
 
-        let mut self_vals = self.values.into_iter();
-        let mut self_cur = self_vals.next().expect("Signals are not empty");
-        let mut self_prev: Option<SignalValue<T, V>> = None;
-        let mut self_dry = false;
+        let mut self_vals = self.values.into_iter().rev().peekable();
+        let mut other_vals = other.values.into_iter().rev().peekable();
 
-        let mut other_vals = other.values.into_iter();
-        let mut other_cur = other_vals.next().expect("Signals are not empty");
-        let mut other_prev: Option<SignalValue<T, V>> = None;
-        let mut other_dry = false;
+        let mut candidate: Option<SignalValue<T, W>> = None;
 
-        while !self_dry || !other_dry {
-            let cmp = self_cur.time.cmp(&other_cur.time);
+        // Since the last time in both iterators must be 0
+        // and we always advance the iterator with the highest time,
+        // the iterators will run dry simultaneously
+        while self_vals.peek().is_some() && other_vals.peek().is_some() {
+            let self_cur = self_vals.peek().expect("Peek was Some");
+            let other_cur = other_vals.peek().expect("Peek was Some");
 
-            let signal_value = match (cmp, self_dry || other_dry) {
-                (Ordering::Less, false) => SignalValue {
-                    time: self_cur.time,
-                    value: op(&self_cur.value, &other_prev.as_ref().expect("First time is 0 for both so we will advance both iterators before getting to this case").value),
-                },
-                (Ordering::Greater, false) => SignalValue {
-                    time: other_cur.time,
-                    value: op(&self_prev.as_ref().expect("First time is 0 for both so we will advance both iterators before getting to this case").value, &other_cur.value),
-                },
-                // If we have run one of the iterators dry, we always need to use the current value of this iterator
-                _ => SignalValue {
-                    time: if other_dry { self_cur.time } else { other_cur.time },
-                    value: op(&self_cur.value, &other_cur.value),
-                },
-            };
-            if values
-                .last()
-                .map_or(true, |v: &SignalValue<T, W>| v.value != signal_value.value)
+            let time = self_cur.time.max(other_cur.time);
+            let value = op(&self_cur.value, &other_cur.value);
+
+            // Insert the current candidate if the value changed
+            if candidate
+                .as_ref()
+                .is_some_and(|sig_val| sig_val.value != value)
             {
-                values.insert(signal_value);
+                values.insert(candidate.expect("We checked for Some above"));
             }
+            candidate = Some(SignalValue { time, value });
 
-            // Store condition for other, as we might change self_dry below
-            let advance_other = matches!(cmp, Ordering::Greater | Ordering::Equal) || self_dry;
-            if matches!(cmp, Ordering::Less | Ordering::Equal) || other_dry {
-                if let Some(self_next) = self_vals.next() {
-                    self_prev = Some(self_cur);
-                    self_cur = self_next;
-                } else {
-                    self_dry = true;
+            // Advance the iterator with the largest time
+            match self_cur.time.cmp(&other_cur.time) {
+                Ordering::Less => {
+                    other_vals.next();
                 }
-            }
-
-            if advance_other {
-                if let Some(other_next) = other_vals.next() {
-                    other_prev = Some(other_cur);
-                    other_cur = other_next;
-                } else {
-                    other_dry = true;
+                Ordering::Equal => {
+                    self_vals.next();
+                    other_vals.next();
+                }
+                Ordering::Greater => {
+                    self_vals.next();
                 }
             }
         }
+        assert!(self_vals.peek().is_none() && other_vals.peek().is_none());
+
+        if let Some(sig_val) = candidate {
+            values.insert(sig_val);
+        }
+
         Signal { values }
     }
 }
