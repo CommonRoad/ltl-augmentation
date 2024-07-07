@@ -149,6 +149,7 @@ impl Add for Interval {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntervalSet {
     bounds: BTreeSet<(u32, bool)>,
 }
@@ -158,6 +159,10 @@ impl IntervalSet {
         IntervalSet {
             bounds: BTreeSet::new(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bounds.is_empty()
     }
 
     pub fn add(&mut self, interval: &Interval) {
