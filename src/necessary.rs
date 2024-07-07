@@ -34,16 +34,45 @@ impl<K: Eq + std::hash::Hash + Clone, V: Default> Merge<V> for HashMap<K, V> {
     }
 }
 
+pub fn collect_aps(nnf: &NNFFormula) -> HashSet<AtomicProposition> {
+    match nnf {
+        NNFFormula::True | NNFFormula::False => HashSet::new(),
+        NNFFormula::AP(name, negated) => HashSet::from([AtomicProposition {
+            ap_name: Rc::from(name.as_str()),
+            negated: *negated,
+        }]),
+        NNFFormula::And(subs) | NNFFormula::Or(subs) => subs
+            .iter()
+            .map(collect_aps)
+            .reduce(|mut acc, e| {
+                acc.extend(e);
+                acc
+            })
+            .unwrap_or_default(),
+        NNFFormula::Until(lhs, _, rhs) | NNFFormula::Release(lhs, _, rhs) => {
+            let mut set = collect_aps(lhs);
+            set.extend(collect_aps(rhs));
+            set
+        }
+    }
+}
+
 pub fn necessary_intervals(nnf: &NNFFormula) -> HashMap<AtomicProposition, IntervalSet> {
-    let mut intervals = collect_necessary_intervals(nnf);
+    let mut intervals = collect_necessary_intervals(nnf, &collect_aps(nnf));
     intervals.retain(|_, v| !v.is_empty());
     intervals
 }
 
-fn collect_necessary_intervals(nnf: &NNFFormula) -> HashMap<AtomicProposition, IntervalSet> {
+fn collect_necessary_intervals(
+    nnf: &NNFFormula,
+    all_aps: &HashSet<AtomicProposition>,
+) -> HashMap<AtomicProposition, IntervalSet> {
     match nnf {
         NNFFormula::True => HashMap::new(), // True requires nothing
-        NNFFormula::False => todo!(),       // False requires everything
+        NNFFormula::False => all_aps
+            .iter()
+            .map(|ap| (ap.clone(), Interval::from_endpoints(0, 0).into()))
+            .collect(), // False requires everything
         NNFFormula::AP(name, negated) => {
             let mut map = HashMap::new();
             map.insert(
@@ -57,7 +86,7 @@ fn collect_necessary_intervals(nnf: &NNFFormula) -> HashMap<AtomicProposition, I
         }
         NNFFormula::And(subs) => subs
             .iter()
-            .map(collect_necessary_intervals)
+            .map(|f| collect_necessary_intervals(f, all_aps))
             .reduce(|mut acc, e| {
                 acc.merge(e, IntervalSet::union);
                 acc
@@ -65,7 +94,7 @@ fn collect_necessary_intervals(nnf: &NNFFormula) -> HashMap<AtomicProposition, I
             .unwrap_or_default(),
         NNFFormula::Or(subs) => subs
             .iter()
-            .map(collect_necessary_intervals)
+            .map(|f| collect_necessary_intervals(f, all_aps))
             .reduce(|mut acc, e| {
                 acc.merge(e, IntervalSet::intersect);
                 acc
@@ -75,7 +104,7 @@ fn collect_necessary_intervals(nnf: &NNFFormula) -> HashMap<AtomicProposition, I
         | NNFFormula::Release(_, shift @ Interval::Range(lb, ub), rhs)
             if lb == ub =>
         {
-            let rhs_intervals = collect_necessary_intervals(rhs);
+            let rhs_intervals = collect_necessary_intervals(rhs, all_aps);
             rhs_intervals
                 .into_iter()
                 .map(|(k, v)| (k, v.minkowski_sum(shift)))
@@ -84,8 +113,8 @@ fn collect_necessary_intervals(nnf: &NNFFormula) -> HashMap<AtomicProposition, I
         NNFFormula::Until(lhs, int, rhs) => match int {
             Interval::Empty => panic!("Malformed formula: Empty interval in Until"),
             Interval::Range(lb, _) => {
-                let mut lhs_intervals = collect_necessary_intervals(lhs);
-                let rhs_intervals = collect_necessary_intervals(rhs);
+                let mut lhs_intervals = collect_necessary_intervals(lhs, all_aps);
+                let rhs_intervals = collect_necessary_intervals(rhs, all_aps);
                 let shift = Interval::from_endpoints(*lb, *lb);
                 lhs_intervals.merge(rhs_intervals, |lhs, rhs| {
                     lhs.minkowski_sum(&shift)
@@ -97,7 +126,7 @@ fn collect_necessary_intervals(nnf: &NNFFormula) -> HashMap<AtomicProposition, I
         NNFFormula::Release(lhs, int, rhs) if **lhs == NNFFormula::False => match int {
             Interval::Empty => panic!("Malformed formula: Empty interval in Release"),
             shift @ Interval::Range(..) => {
-                let rhs_intervals = collect_necessary_intervals(rhs);
+                let rhs_intervals = collect_necessary_intervals(rhs, all_aps);
                 rhs_intervals
                     .into_iter()
                     .map(|(k, v)| (k, v.minkowski_sum(shift)))
@@ -107,8 +136,8 @@ fn collect_necessary_intervals(nnf: &NNFFormula) -> HashMap<AtomicProposition, I
         NNFFormula::Release(lhs, int, rhs) => match int {
             Interval::Empty => panic!("Malformed formula: Empty interval in Until"),
             Interval::Range(lb, _) => {
-                let mut lhs_intervals = collect_necessary_intervals(lhs);
-                let rhs_intervals = collect_necessary_intervals(rhs);
+                let mut lhs_intervals = collect_necessary_intervals(lhs, all_aps);
+                let rhs_intervals = collect_necessary_intervals(rhs, all_aps);
                 let shift_lb = Interval::from_endpoints(*lb, *lb);
                 let shift_suc_lb = Interval::from_endpoints(lb + 1, lb + 1);
                 lhs_intervals.merge(rhs_intervals, |lhs, rhs| {
@@ -122,7 +151,6 @@ fn collect_necessary_intervals(nnf: &NNFFormula) -> HashMap<AtomicProposition, I
                 lhs_intervals
             }
         },
-        _ => todo!(),
     }
 }
 
