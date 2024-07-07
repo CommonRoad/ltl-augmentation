@@ -221,20 +221,8 @@ impl IntervalSet {
     }
 
     pub fn union(self, other: IntervalSet) -> IntervalSet {
-        let bounds = self
-            .bounds
-            .into_iter()
-            .merge(other.bounds)
-            .map(Some)
-            .coalesce(|bound1, bound2| match (bound1, bound2) {
-                (Some((_, true)), Some((_, true))) => Ok(bound1), // Keep lowest bound for opens
-                (Some((_, false)), Some((_, false))) => Ok(bound2), // Keep highest bound for closes
-                (Some((a, false)), Some((b, true))) if a == b => Ok(None), // Eliminate open/close on same value
-                (None, _) => Ok(bound2),                                   // None can be dropped
-                _ => Err((bound1, bound2)),
-            })
-            .map(|option| option.expect("None must have been dropped by coalesce"))
-            .collect();
+        let bounds =
+            IntervalSet::normalize_bounds(self.bounds.into_iter().merge(other.bounds)).collect();
         IntervalSet { bounds }
     }
 
@@ -262,6 +250,40 @@ impl IntervalSet {
         IntervalSet { bounds }
     }
 
+    pub fn minkowski_sum(self, interval: &Interval) -> IntervalSet {
+        match interval {
+            Interval::Empty => IntervalSet::new(),
+            Interval::Range(start, end) => {
+                let bounds =
+                    IntervalSet::normalize_bounds(self.bounds.into_iter().map(
+                        |bound| match bound {
+                            (x, true) => (x + start, true),
+                            (x, false) => (x + end, false),
+                        },
+                    ))
+                    .collect();
+                IntervalSet { bounds }
+            }
+        }
+    }
+
+    pub fn back_shift(self, interval: &Interval) -> IntervalSet {
+        match interval {
+            Interval::Empty => IntervalSet::new(),
+            Interval::Range(start, end) => {
+                let bounds =
+                    IntervalSet::normalize_bounds(self.bounds.into_iter().map(
+                        |bound| match bound {
+                            (x, true) => (x.saturating_sub(*end), true),
+                            (x, false) => (x.saturating_sub(*start), false),
+                        },
+                    ))
+                    .collect();
+                IntervalSet { bounds }
+            }
+        }
+    }
+
     pub fn get_intervals(&self) -> Vec<Interval> {
         self.bounds
             .iter()
@@ -274,6 +296,21 @@ impl IntervalSet {
                 Interval::from_endpoints(*start, end - 1)
             })
             .collect()
+    }
+
+    fn normalize_bounds(
+        bounds: impl Iterator<Item = (u32, bool)>,
+    ) -> impl Iterator<Item = (u32, bool)> {
+        bounds
+            .map(Some)
+            .coalesce(|bound1, bound2| match (bound1, bound2) {
+                (Some((_, true)), Some((_, true))) => Ok(bound1), // Keep lowest bound for opens
+                (Some((_, false)), Some((_, false))) => Ok(bound2), // Keep highest bound for closes
+                (Some((a, false)), Some((b, true))) if a == b => Ok(None), // Eliminate open/close on same value
+                (None, _) => Ok(bound2),                                   // None can be dropped
+                _ => Err((bound1, bound2)),
+            })
+            .map(|option| option.expect("None must have been dropped by coalesce"))
     }
 }
 
@@ -441,5 +478,31 @@ mod test {
 
         let is = is1.intersect(is2);
         assert_eq!(is.get_intervals(), vec![Interval::from_endpoints(10, 10)]);
+    }
+
+    #[test]
+    fn test_interval_set_minkowski_sum() {
+        let i1 = Interval::from_endpoints(0, 10);
+        let i2 = Interval::from_endpoints(12, 20);
+
+        let mut is = IntervalSet::new();
+        is.add(&i1);
+        is.add(&i2);
+
+        let res = is.minkowski_sum(&Interval::from_endpoints(2, 3));
+        assert_eq!(res.get_intervals(), vec![Interval::from_endpoints(2, 23)]);
+    }
+
+    #[test]
+    fn test_interval_set_back_shift() {
+        let i1 = Interval::from_endpoints(0, 10);
+        let i2 = Interval::from_endpoints(12, 20);
+
+        let mut is = IntervalSet::new();
+        is.add(&i1);
+        is.add(&i2);
+
+        let res = is.back_shift(&Interval::from_endpoints(2, 3));
+        assert_eq!(res.get_intervals(), vec![Interval::from_endpoints(0, 18)]);
     }
 }
