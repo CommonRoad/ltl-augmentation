@@ -180,26 +180,47 @@ pub struct Signal<T, V> {
     values: BTreeSet<SignalValue<T, V>>,
 }
 
-impl<T: Ord + From<u32> + Copy, V: Default> Signal<T, V> {
+impl<T: Integer + Unsigned + Copy, V: Default> Signal<T, V> {
     pub fn new() -> Self {
+        Signal::uniform(Default::default())
+    }
+}
+
+impl<T: Integer + Unsigned + Copy, V> Signal<T, V> {
+    pub fn uniform(v: V) -> Self {
         let mut values = BTreeSet::new();
         values.insert(SignalValue {
-            time: 0.into(),
-            value: Default::default(),
+            time: T::zero(),
+            value: v,
         });
         Signal { values }
     }
 
-    pub fn combine<F, W: Eq>(self, other: Signal<T, V>, op: F) -> Signal<T, W>
+    pub fn map<F, W: Eq>(&self, op: F) -> Signal<T, W>
+    where
+        F: Fn(&V) -> W,
+    {
+        let values = self
+            .values
+            .iter()
+            .map(|SignalValue { time, value }| SignalValue {
+                time: *time,
+                value: op(value),
+            })
+            .collect();
+        Signal { values }.normalize()
+    }
+
+    // map_injective + combine_injective that omit normalization
+
+    pub fn combine<F, W: Eq>(&self, other: &Signal<T, V>, op: F) -> Signal<T, W>
     where
         F: Fn(&V, &V) -> W,
     {
         let mut values = BTreeSet::new();
 
-        let mut self_vals = self.values.into_iter().rev().peekable();
-        let mut other_vals = other.values.into_iter().rev().peekable();
-
-        let mut candidate: Option<SignalValue<T, W>> = None;
+        let mut self_vals = self.values.iter().rev().peekable();
+        let mut other_vals = other.values.iter().rev().peekable();
 
         // Since the last time in both iterators must be 0
         // and we always advance the iterator with the highest time,
@@ -211,14 +232,7 @@ impl<T: Ord + From<u32> + Copy, V: Default> Signal<T, V> {
             let time = self_cur.time.max(other_cur.time);
             let value = op(&self_cur.value, &other_cur.value);
 
-            // Insert the current candidate if the value changed
-            if candidate
-                .as_ref()
-                .is_some_and(|sig_val| sig_val.value != value)
-            {
-                values.insert(candidate.expect("We checked for Some above"));
-            }
-            candidate = Some(SignalValue { time, value });
+            values.insert(SignalValue { time, value });
 
             // Advance the iterator with the largest time
             match self_cur.time.cmp(&other_cur.time) {
@@ -236,24 +250,47 @@ impl<T: Ord + From<u32> + Copy, V: Default> Signal<T, V> {
         }
         assert!(self_vals.peek().is_none() && other_vals.peek().is_none());
 
-        if let Some(sig_val) = candidate {
-            values.insert(sig_val);
-        }
+        Signal { values }.normalize()
+    }
+}
 
+impl<T: Integer + Unsigned + Copy, V: Eq> Signal<T, V> {
+    fn normalize(self) -> Signal<T, V> {
+        let values = self
+            .values
+            .into_iter()
+            .coalesce(|sv1, sv2| {
+                if sv1.value == sv2.value {
+                    Ok(sv1)
+                } else {
+                    Err((sv1, sv2))
+                }
+            })
+            .collect();
         Signal { values }
     }
 }
 
-impl<T: Copy + Sub<u32, Output = T>, V> Signal<T, V> {
+impl<T: Integer + Unsigned + SaturatingSub + Copy, V> Signal<T, V> {
     pub fn into_intervals(self) -> Vec<(Interval<T>, V)> {
+        self.into_intervals_where(|_| true)
+    }
+
+    pub fn into_intervals_where<F>(self, pred: F) -> Vec<(Interval<T>, V)>
+    where
+        F: Fn(&V) -> bool,
+    {
         let mut result = Vec::with_capacity(self.values.len());
         let mut it = self.values.into_iter().peekable();
         while let Some(v1) = it.next() {
+            if !pred(&v1.value) {
+                continue;
+            }
             if let Some(v2) = it.peek() {
                 result.push((
                     Interval::Bounded {
                         lb: v1.time,
-                        ub: v2.time - 1,
+                        ub: v2.time.saturating_sub(&T::one()),
                     },
                     v1.value,
                 ));
@@ -264,9 +301,44 @@ impl<T: Copy + Sub<u32, Output = T>, V> Signal<T, V> {
         }
         result
     }
+
+    pub fn intervals_where<F>(&self, pred: F) -> Vec<Interval<T>>
+    where
+        F: Fn(&V) -> bool,
+    {
+        let mut result = Vec::with_capacity(self.values.len());
+        let mut it = self.values.iter().peekable();
+        while let Some(v1) = it.next() {
+            if !pred(&v1.value) {
+                continue;
+            }
+            if let Some(v2) = it.peek() {
+                result.push(Interval::Bounded {
+                    lb: v1.time,
+                    ub: v2.time.saturating_sub(&T::one()),
+                });
+            } else {
+                // Last element
+                result.push(Interval::Unbounded { lb: v1.time });
+            }
+        }
+        result
+    }
 }
 
-impl<T: Ord + From<u32> + Copy, V: Default> Default for Signal<T, V> {
+impl<T: Integer + Unsigned + SaturatingSub + Copy, V: Eq> Signal<T, V> {
+    pub fn intervals_where_eq(&self, v: &V) -> Vec<Interval<T>> {
+        self.intervals_where(|vv| v == vv)
+    }
+}
+
+impl<T: Integer + Unsigned + SaturatingSub + Copy, V: Clone> Signal<T, V> {
+    pub fn intervals(&self) -> Vec<(Interval<T>, V)> {
+        self.clone().into_intervals()
+    }
+}
+
+impl<T: Integer + Unsigned + Copy, V: Default> Default for Signal<T, V> {
     fn default() -> Self {
         Signal::new()
     }
@@ -306,7 +378,7 @@ mod test {
             value: 60,
         });
 
-        let combined_intervals = signal1.combine(signal2, |a, b| a + b).into_intervals();
+        let combined_intervals = signal1.combine(&signal2, |a, b| a + b).into_intervals();
         assert_eq!(
             combined_intervals,
             vec![
