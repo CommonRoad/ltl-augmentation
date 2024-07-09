@@ -104,7 +104,7 @@ impl<T: Integer + Unsigned + Copy, V: Eq> Signal<T, V> {
             values.insert(*time, value);
 
             // Advance the iterator with the largest time
-            match self_cur.0.cmp(&other_cur.0) {
+            match self_cur.0.cmp(other_cur.0) {
                 Ordering::Less => {
                     other_vals.next();
                 }
@@ -201,6 +201,16 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub, V: Eq> Signal<T, V> {
 impl<T: Integer + Unsigned + Copy, V: Default + Eq> Default for Signal<T, V> {
     fn default() -> Self {
         Signal::new()
+    }
+}
+
+impl<V: Default + Eq + Clone> FromIterator<(Interval<u32>, V)> for Signal<u32, V> {
+    fn from_iter<I: IntoIterator<Item = (Interval<u32>, V)>>(iter: I) -> Self {
+        let mut signal = Signal::new();
+        iter.into_iter().for_each(|(interval, value)| {
+            signal.set(&interval, value);
+        });
+        signal
     }
 }
 
