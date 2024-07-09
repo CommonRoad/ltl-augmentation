@@ -3,10 +3,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{
-    formula::NNFFormula,
-    interval::{Interval, IntervalSet},
-};
+use crate::{formula::NNFFormula, interval::Interval, sets::interval_set::IntervalSet};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AtomicProposition {
