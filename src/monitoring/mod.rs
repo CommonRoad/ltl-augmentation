@@ -25,7 +25,7 @@ pub trait Logical<T> {
     }
 }
 
-impl<T: Integer + Unsigned + SaturatingSub + Copy> Logical<T> for Signal<T, bool> {
+impl<T: Integer + Unsigned + Copy + SaturatingSub> Logical<T> for Signal<T, bool> {
     fn negation(&self) -> Self {
         self.map(|v| !v)
     }
@@ -43,15 +43,13 @@ impl<T: Integer + Unsigned + SaturatingSub + Copy> Logical<T> for Signal<T, bool
         let rhs_intervals = other.intervals_where_eq(&true);
         let positive_intervals: Vec<_> = iproduct!(lhs_intervals, rhs_intervals)
             .filter_map(|(lhs_interval, rhs_interval)| {
-                match until_semantics(&lhs_interval, until_interval, &rhs_interval) {
+                match positive_until_semantics(&lhs_interval, until_interval, &rhs_interval) {
                     Interval::Empty => None,
                     interval => Some(interval),
                 }
             })
             .collect();
-        let signal = Signal::uniform(false);
-        // TODO: Add positive intervals
-        signal
+        Signal::from_positive_intervals(positive_intervals)
     }
 
     fn release(&self, release_interval: &Interval<T>, other: &Self) -> Self {
@@ -59,19 +57,17 @@ impl<T: Integer + Unsigned + SaturatingSub + Copy> Logical<T> for Signal<T, bool
         let rhs_intervals = other.intervals_where_eq(&false);
         let negative_intervals: Vec<_> = iproduct!(lhs_intervals, rhs_intervals)
             .filter_map(|(lhs_interval, rhs_interval)| {
-                match until_semantics(&lhs_interval, release_interval, &rhs_interval) {
+                match positive_until_semantics(&lhs_interval, release_interval, &rhs_interval) {
                     Interval::Empty => None,
                     interval => Some(interval),
                 }
             })
             .collect();
-        let signal = Signal::uniform(true);
-        // TODO: Add negative intervals
-        signal
+        Signal::from_negative_intervals(negative_intervals)
     }
 }
 
-fn until_semantics<T: Integer + Unsigned + SaturatingSub + Copy>(
+fn positive_until_semantics<T: Integer + Unsigned + SaturatingSub + Copy>(
     lhs_interval: &Interval<T>,
     until_interval: &Interval<T>,
     rhs_interval: &Interval<T>,
