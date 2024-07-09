@@ -46,10 +46,10 @@ fn collect_necessary_intervals<T: Integer + Unsigned + Copy + Hash + SaturatingS
         NNFFormula::True => HashMap::new(), // True requires nothing
         NNFFormula::False => all_aps
             .iter()
-            .map(|ap| (ap.clone(), Interval::singular(T::zero()).into()))
+            .map(|ap| (ap.clone(), Interval::singleton(T::zero()).into()))
             .collect(), // False requires everything
         NNFFormula::AP(ap) => {
-            HashMap::from_iter([(ap.clone(), Interval::singular(T::zero()).into())])
+            HashMap::from_iter([(ap.clone(), Interval::singleton(T::zero()).into())])
         }
         NNFFormula::And(subs) => subs
             .iter()
@@ -82,7 +82,7 @@ fn collect_necessary_intervals<T: Integer + Unsigned + Copy + Hash + SaturatingS
             Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => {
                 let mut lhs_intervals = collect_necessary_intervals(lhs, all_aps);
                 let rhs_intervals = collect_necessary_intervals(rhs, all_aps);
-                let shift = Interval::singular(*lb);
+                let shift = Interval::singleton(*lb);
                 lhs_intervals.merge(rhs_intervals, |lhs, rhs| {
                     lhs.minkowski_sum(&shift)
                         .intersect(rhs.minkowski_sum(&shift))
@@ -105,8 +105,8 @@ fn collect_necessary_intervals<T: Integer + Unsigned + Copy + Hash + SaturatingS
             Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => {
                 let mut lhs_intervals = collect_necessary_intervals(lhs, all_aps);
                 let rhs_intervals = collect_necessary_intervals(rhs, all_aps);
-                let shift_lb = Interval::singular(*lb);
-                let shift_suc_lb = Interval::singular(*lb + T::one());
+                let shift_lb = Interval::singleton(*lb);
+                let shift_suc_lb = Interval::singleton(*lb + T::one());
                 lhs_intervals.merge(rhs_intervals, |lhs, rhs| {
                     // Rhs must hold at lb
                     rhs.clone().minkowski_sum(&shift_lb).union(
@@ -140,7 +140,7 @@ mod test {
                 name: Rc::from("a"),
                 negated: false,
             },
-            Interval::singular(0).into(),
+            Interval::singleton(0).into(),
         )]);
         assert_eq!(intervals, expected);
     }
@@ -156,7 +156,7 @@ mod test {
                 name: Rc::from("a"),
                 negated: false,
             },
-            Interval::singular(1).into(),
+            Interval::singleton(1).into(),
         )]);
         assert_eq!(intervals, expected);
     }
@@ -205,7 +205,7 @@ mod test {
                     name: Rc::from("b"),
                     negated: false,
                 },
-                Interval::singular(5).into(),
+                Interval::singleton(5).into(),
             ),
         ]);
         assert_eq!(intervals, expected);
@@ -222,7 +222,7 @@ mod test {
                 name: Rc::from("b"),
                 negated: false,
             },
-            Interval::singular(2).into(),
+            Interval::singleton(2).into(),
         )]);
         assert_eq!(intervals, expected);
     }

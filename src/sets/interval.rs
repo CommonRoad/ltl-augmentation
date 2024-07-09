@@ -24,7 +24,7 @@ impl<T: Ord> Interval<T> {
         Interval::Unbounded { lb }
     }
 
-    pub fn singular(v: T) -> Self
+    pub fn singleton(v: T) -> Self
     where
         T: Copy,
     {
@@ -225,9 +225,9 @@ mod test {
         assert_eq!(
             merged.into_iter().collect::<HashSet<_>>(),
             vec![
-                (Interval::singular(1), vec![1]),
+                (Interval::singleton(1), vec![1]),
                 (Interval::bounded(2, 3), vec![1, 2]),
-                (Interval::singular(4), vec![2]),
+                (Interval::singleton(4), vec![2]),
                 (Interval::bounded(5, 6), vec![3]),
                 (Interval::bounded(7, 8), vec![3, 4]),
                 (Interval::unbounded(9), vec![4]),

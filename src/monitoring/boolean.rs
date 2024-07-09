@@ -51,7 +51,7 @@ fn positive_until_semantics<T: Integer + Unsigned + SaturatingSub + Copy>(
         _ => *lhs_interval,
     };
     let to_lb = match until_interval {
-        Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => Interval::singular(*lb),
+        Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => Interval::singleton(*lb),
         _ => *until_interval,
     };
     let lb_to_ub = match until_interval {
@@ -88,7 +88,7 @@ mod test {
     #[test]
     fn test_until_2() {
         let lhs =
-            Signal::from_positive_intervals(&[Interval::singular(0_u32), Interval::unbounded(3)]);
+            Signal::from_positive_intervals(&[Interval::singleton(0_u32), Interval::unbounded(3)]);
 
         let rhs =
             Signal::from_positive_intervals(&[Interval::bounded(0, 3), Interval::unbounded(6)]);
@@ -117,7 +117,7 @@ mod test {
 
     #[test]
     fn test_until_4() {
-        let lhs = Signal::from_positive_intervals(&[Interval::singular(1_u32)]);
+        let lhs = Signal::from_positive_intervals(&[Interval::singleton(1_u32)]);
 
         let rhs = Signal::from_positive_intervals(&[Interval::unbounded(2)]);
 
@@ -140,7 +140,7 @@ mod test {
 
         assert_eq!(
             until,
-            Signal::from_positive_intervals(&[Interval::singular(0), Interval::unbounded(2)])
+            Signal::from_positive_intervals(&[Interval::singleton(0), Interval::unbounded(2)])
         );
     }
 }

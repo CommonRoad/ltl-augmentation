@@ -249,7 +249,7 @@ mod test {
         signal1.set(&Interval::unbounded(5), 5);
 
         let mut signal2 = Signal::uniform(0);
-        signal2.set(&Interval::singular(1_u32), -1);
+        signal2.set(&Interval::singleton(1_u32), -1);
         signal2.set(&Interval::bounded(2, 5), 20);
         signal2.set(&Interval::bounded(6, 10), 60);
 
