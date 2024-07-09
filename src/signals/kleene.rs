@@ -50,7 +50,7 @@ impl<T: Integer + Unsigned + Copy> Default for KleeneSignal<T> {
 impl<T: Integer + Unsigned + Copy> From<Signal<T, Kleene>> for KleeneSignal<T> {
     fn from(signal: Signal<T, Kleene>) -> Self {
         let over = signal.map(|&k| k != Kleene::False);
-        let under = signal.map(|&k| k != Kleene::True);
+        let under = signal.map(|&k| k == Kleene::True);
         KleeneSignal { over, under }
     }
 }
