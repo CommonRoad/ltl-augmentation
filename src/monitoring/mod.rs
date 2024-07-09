@@ -1,7 +1,7 @@
 use itertools::iproduct;
 use num::{traits::SaturatingSub, Integer, Unsigned};
 
-use crate::{sets::interval::Interval, signal::Signal};
+use crate::{sets::interval::Interval, signals::signal::Signal};
 
 pub trait Logical<T> {
     fn negation(&self) -> Self;

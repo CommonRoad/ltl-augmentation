@@ -24,6 +24,13 @@ impl<T: Ord> Interval<T> {
         Interval::Unbounded { lb }
     }
 
+    pub fn singular(v: T) -> Self
+    where
+        T: Copy,
+    {
+        Interval::Bounded { lb: v, ub: v }
+    }
+
     pub fn is_empty(&self) -> bool {
         matches!(self, Interval::Empty)
     }
