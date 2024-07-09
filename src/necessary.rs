@@ -122,7 +122,7 @@ fn collect_necessary_intervals<T: Integer + Unsigned + Copy + Hash + SaturatingS
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::rc::Rc;
 
     use crate::parser::mltl_parser;

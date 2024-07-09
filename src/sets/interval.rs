@@ -207,7 +207,7 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> Interval<T> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use std::collections::HashSet;
 

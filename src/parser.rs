@@ -73,7 +73,7 @@ peg::parser! {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use rstest::*;
 
     use super::*;

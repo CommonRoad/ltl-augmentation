@@ -177,7 +177,7 @@ fn any_is_subset<'a, F: Ord + 'a>(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::parser::mltl_parser;
 
     use super::*;

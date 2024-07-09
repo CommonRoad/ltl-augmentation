@@ -67,7 +67,7 @@ fn positive_until_semantics<T: Integer + Unsigned + SaturatingSub + Copy>(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]

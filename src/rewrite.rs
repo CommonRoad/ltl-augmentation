@@ -118,7 +118,7 @@ impl<T: Integer + Unsigned + Copy + Hash> Rewriter<T> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::parser::mltl_parser;
 
     use super::*;

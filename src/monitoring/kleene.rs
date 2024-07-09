@@ -39,7 +39,7 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> Logical<T> for KleeneSignal<T
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::signals::{kleene::Kleene, signal::Signal};
 
     use super::*;

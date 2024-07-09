@@ -112,7 +112,7 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub + Hash> Monitor<T> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::{parser::mltl_parser, sets::interval::Interval, signals::kleene::KleeneSignal};
 
     use super::*;

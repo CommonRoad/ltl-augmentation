@@ -100,7 +100,7 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub, B: Borrow<Interval<T>>> FromI
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]

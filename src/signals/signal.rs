@@ -238,7 +238,7 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub, V: Default + Eq + Clone> Into
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]

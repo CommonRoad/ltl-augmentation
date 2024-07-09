@@ -270,7 +270,7 @@ impl<T: Integer + Unsigned + Copy + Hash> From<Box<Formula<T>>> for Box<NNFFormu
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::parser::mltl_parser;
 
     use super::*;
