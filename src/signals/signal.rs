@@ -46,7 +46,7 @@ impl<T: Integer + Unsigned + Copy, V: Eq> Signal<T, V> {
         V: Clone,
     {
         match interval {
-            Interval::Bounded { lb, ub } => self.set_between(*lb, Some(*ub), value),
+            Interval::Bounded { lb, ub } => self.set_between(*lb, Some(*ub + T::one()), value),
             Interval::Unbounded { lb } => self.set_between(*lb, None, value),
             Interval::Empty => (),
         }
@@ -57,7 +57,7 @@ impl<T: Integer + Unsigned + Copy, V: Eq> Signal<T, V> {
         V: Clone,
     {
         // Save the old value after the upper bound
-        let succ_value = ub.map(|ub| self.at(ub + T::one()).clone());
+        let succ_value = ub.map(|ub| self.at(ub).clone());
 
         // Remove everything between lb and ub (None means infinity)
         self.values
@@ -66,7 +66,7 @@ impl<T: Integer + Unsigned + Copy, V: Eq> Signal<T, V> {
         // If the old value after the upper bound is different from the new value, we need to insert a boundary
         if let (Some(ub), Some(succ_value)) = (ub, succ_value) {
             if succ_value != value {
-                self.values.insert(ub + T::one(), succ_value);
+                self.values.insert(ub, succ_value);
             }
         }
 
