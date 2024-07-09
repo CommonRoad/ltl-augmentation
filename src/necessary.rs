@@ -55,7 +55,7 @@ fn collect_necessary_intervals<T: Integer + Unsigned + Copy + Hash + SaturatingS
             .iter()
             .map(|f| collect_necessary_intervals(f, all_aps))
             .reduce(|mut acc, e| {
-                acc.merge(e, IntervalSet::union);
+                acc.merge(e, |i1, i2| i1.union(&i2));
                 acc
             })
             .unwrap_or_default(),
@@ -63,7 +63,7 @@ fn collect_necessary_intervals<T: Integer + Unsigned + Copy + Hash + SaturatingS
             .iter()
             .map(|f| collect_necessary_intervals(f, all_aps))
             .reduce(|mut acc, e| {
-                acc.merge(e, IntervalSet::intersect);
+                acc.merge(e, |i1, i2| i1.intersect(&i2));
                 acc
             })
             .unwrap_or_default(),
@@ -85,7 +85,7 @@ fn collect_necessary_intervals<T: Integer + Unsigned + Copy + Hash + SaturatingS
                 let shift = Interval::singleton(*lb);
                 lhs_intervals.merge(rhs_intervals, |lhs, rhs| {
                     lhs.minkowski_sum(&shift)
-                        .intersect(rhs.minkowski_sum(&shift))
+                        .intersect(&rhs.minkowski_sum(&shift))
                 });
                 lhs_intervals
             }
@@ -111,8 +111,8 @@ fn collect_necessary_intervals<T: Integer + Unsigned + Copy + Hash + SaturatingS
                     // Rhs must hold at lb
                     rhs.clone().minkowski_sum(&shift_lb).union(
                         // Lhs or rhs must hold at lb + 1
-                        lhs.minkowski_sum(&shift_suc_lb)
-                            .intersect(rhs.minkowski_sum(&shift_suc_lb)),
+                        &lhs.minkowski_sum(&shift_suc_lb)
+                            .intersect(&rhs.minkowski_sum(&shift_suc_lb)),
                     )
                 });
                 lhs_intervals
