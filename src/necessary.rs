@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
-    rc::Rc,
 };
 
 use num::{traits::SaturatingSub, Integer, Unsigned};
@@ -124,6 +123,8 @@ fn collect_necessary_intervals<T: Integer + Unsigned + Copy + Hash + SaturatingS
 
 #[cfg(test)]
 mod test {
+    use std::rc::Rc;
+
     use crate::parser::mltl_parser;
 
     use super::*;

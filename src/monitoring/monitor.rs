@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
-    rc::Rc,
 };
 
 use itertools::Itertools;
@@ -9,7 +8,6 @@ use num::{traits::SaturatingSub, Integer, Unsigned};
 
 use crate::{
     formula::{AtomicProposition, NNFFormula},
-    sets::interval::Interval,
     signals::{kleene::Kleene, signal::Signal},
 };
 
@@ -115,7 +113,7 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub + Hash> Monitor<T> {
 
 #[cfg(test)]
 mod test {
-    use crate::{parser::mltl_parser, signals::kleene::KleeneSignal};
+    use crate::{parser::mltl_parser, sets::interval::Interval, signals::kleene::KleeneSignal};
 
     use super::*;
 

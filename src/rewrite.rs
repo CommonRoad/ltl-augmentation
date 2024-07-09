@@ -5,7 +5,10 @@ use num::{Integer, Unsigned};
 
 use crate::{formula::NNFFormula, minimal_dnf::MinDNF, sets::interval::Interval};
 
-struct Rewriter<T>(std::marker::PhantomData<T>);
+pub struct Rewriter<T>(std::marker::PhantomData<T>);
+
+type UntilReleaseRestVectors<T> = (Vec<NNFFormula<T>>, Vec<NNFFormula<T>>, Vec<NNFFormula<T>>);
+type KeyIntervalFormulas<T> = (NNFFormula<T>, Interval<T>, Vec<NNFFormula<T>>);
 
 impl<T: Integer + Unsigned + Copy + Hash> Rewriter<T> {
     pub fn rewrite(nnf: NNFFormula<T>) -> NNFFormula<T> {
@@ -90,7 +93,7 @@ impl<T: Integer + Unsigned + Copy + Hash> Rewriter<T> {
 
     fn extract_until_and_release(
         nnfs: impl Iterator<Item = NNFFormula<T>>,
-    ) -> (Vec<NNFFormula<T>>, Vec<NNFFormula<T>>, Vec<NNFFormula<T>>) {
+    ) -> UntilReleaseRestVectors<T> {
         let (untils, rest): (Vec<_>, Vec<_>) =
             nnfs.partition(|f| matches!(f, NNFFormula::Until(..)));
         let (releases, rest): (Vec<_>, Vec<_>) = rest
@@ -101,7 +104,7 @@ impl<T: Integer + Unsigned + Copy + Hash> Rewriter<T> {
 
     fn grouped_interval_merge(
         formulas: impl Iterator<Item = (NNFFormula<T>, Interval<T>, NNFFormula<T>)>,
-    ) -> Vec<(NNFFormula<T>, Interval<T>, Vec<NNFFormula<T>>)> {
+    ) -> Vec<KeyIntervalFormulas<T>> {
         let multi_map: MultiMap<_, _> = formulas.map(|(key, int, val)| (key, (int, val))).collect();
         multi_map
             .iter_all()

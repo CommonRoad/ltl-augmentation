@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, os::unix::fs::OpenOptionsExt};
+use std::collections::BTreeSet;
 
 use itertools::Itertools;
 use num::{traits::SaturatingSub, Integer, Unsigned};
