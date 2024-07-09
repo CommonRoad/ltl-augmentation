@@ -74,9 +74,12 @@ peg::parser! {
 
 #[cfg(test)]
 mod test {
+    use rstest::*;
+
     use super::*;
 
-    fn get_aps<T>() -> (Formula<T>, Formula<T>, Formula<T>) {
+    #[fixture]
+    fn aps<T>() -> (Formula<T>, Formula<T>, Formula<T>) {
         let a = Formula::AP(AtomicProposition {
             name: Rc::from("a"),
             negated: false,
@@ -92,12 +95,11 @@ mod test {
         (a, b, c)
     }
 
-    #[test]
-    fn test_parser() {
-        use super::*;
+    #[rstest]
+    fn test_parser(aps: (Formula<u32>, Formula<u32>, Formula<u32>)) {
+        let (a, b, c) = aps;
 
         let formula = mltl_parser::formula("!a U[1, 2] !(b & F[0, 3] c)").unwrap();
-        let (a, b, c) = get_aps();
         assert_eq!(
             formula,
             Formula::until(
@@ -111,15 +113,15 @@ mod test {
         );
     }
 
-    #[test]
-    fn test_parser_associativity() {
-        let (a, b, c) = get_aps();
+    #[rstest]
+    fn test_parser_associativity(aps: (Formula<u32>, Formula<u32>, Formula<u32>)) {
+        let (a, b, c) = aps;
+
         assert_eq!(
             mltl_parser::formula("a -> b -> c").unwrap(),
-            Formula::implies(a, Formula::implies(b, c))
+            Formula::implies(a.clone(), Formula::implies(b.clone(), c.clone()))
         );
 
-        let (a, b, c) = get_aps();
         assert_eq!(
             mltl_parser::formula("a U[0, 1] b U[1, 2] c").unwrap(),
             Formula::until(
