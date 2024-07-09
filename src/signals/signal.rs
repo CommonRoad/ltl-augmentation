@@ -62,7 +62,7 @@ impl<T: Integer + Unsigned + Copy, V: Eq> Signal<T, V> {
         }
 
         // Insert a boundary with the new value at the lower bound, if it is not set there already
-        if self.at(lb) != &value {
+        if lb == T::zero() || self.at(lb) != &value {
             self.values.insert(lb, value);
         }
     }
@@ -204,8 +204,10 @@ impl<T: Integer + Unsigned + Copy, V: Default + Eq> Default for Signal<T, V> {
     }
 }
 
-impl<V: Default + Eq + Clone> FromIterator<(Interval<u32>, V)> for Signal<u32, V> {
-    fn from_iter<I: IntoIterator<Item = (Interval<u32>, V)>>(iter: I) -> Self {
+impl<T: Integer + Unsigned + Copy, V: Default + Eq + Clone> FromIterator<(Interval<T>, V)>
+    for Signal<T, V>
+{
+    fn from_iter<I: IntoIterator<Item = (Interval<T>, V)>>(iter: I) -> Self {
         let mut signal = Signal::new();
         iter.into_iter().for_each(|(interval, value)| {
             signal.set(&interval, value);
