@@ -93,7 +93,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_until() {
+    fn test_until_1() {
         let lhs = Signal::from_positive_intervals(&[Interval::bounded(2_u32, 4)]);
 
         let rhs =
@@ -108,6 +108,79 @@ mod test {
                 (Interval::bounded(6, 7), false),
                 (Interval::bounded(8, 10), true),
                 (Interval::unbounded(11), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_until_2() {
+        let lhs =
+            Signal::from_positive_intervals(&[Interval::singular(0_u32), Interval::unbounded(3)]);
+
+        let rhs =
+            Signal::from_positive_intervals(&[Interval::bounded(0, 3), Interval::unbounded(6)]);
+
+        let until = lhs.until(&Interval::bounded(0, 1), &rhs);
+
+        assert_eq!(
+            until.into_intervals(),
+            vec![
+                (Interval::bounded(0, 3), true),
+                (Interval::singular(4), false),
+                (Interval::unbounded(5), true),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_until_3() {
+        let lhs = Signal::from_positive_intervals(&[Interval::unbounded(2_u32)]);
+
+        let rhs = Signal::from_positive_intervals(&[Interval::bounded(0, 1)]);
+
+        let until = lhs.until(&Interval::bounded(0, 1), &rhs);
+
+        assert_eq!(
+            until.into_intervals(),
+            vec![
+                (Interval::bounded(0, 1), true),
+                (Interval::unbounded(2), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_until_4() {
+        let lhs = Signal::from_positive_intervals(&[Interval::singular(1_u32)]);
+
+        let rhs = Signal::from_positive_intervals(&[Interval::unbounded(2)]);
+
+        let until = lhs.until(&Interval::bounded(0, 3), &rhs);
+
+        assert_eq!(
+            until.into_intervals(),
+            vec![
+                (Interval::singular(0), false),
+                (Interval::unbounded(1), true)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_until_5() {
+        let lhs = Signal::from_positive_intervals(&[Interval::unbounded(2_u32)]);
+
+        let rhs =
+            Signal::from_positive_intervals(&[Interval::bounded(0, 1), Interval::unbounded(5)]);
+
+        let until = lhs.until(&Interval::bounded(1, 3), &rhs);
+
+        assert_eq!(
+            until.into_intervals(),
+            vec![
+                (Interval::singular(0), true),
+                (Interval::singular(1), false),
+                (Interval::unbounded(2), true)
             ]
         );
     }
