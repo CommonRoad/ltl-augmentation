@@ -102,13 +102,8 @@ mod test {
         let until = lhs.until(&Interval::bounded(2, 5), &rhs);
 
         assert_eq!(
-            until.into_intervals(),
-            vec![
-                (Interval::bounded(0, 5), true),
-                (Interval::bounded(6, 7), false),
-                (Interval::bounded(8, 10), true),
-                (Interval::unbounded(11), false),
-            ]
+            until,
+            Signal::from_positive_intervals(&[Interval::bounded(0, 5), Interval::bounded(8, 10)])
         );
     }
 
@@ -123,12 +118,8 @@ mod test {
         let until = lhs.until(&Interval::bounded(0, 1), &rhs);
 
         assert_eq!(
-            until.into_intervals(),
-            vec![
-                (Interval::bounded(0, 3), true),
-                (Interval::singular(4), false),
-                (Interval::unbounded(5), true),
-            ]
+            until,
+            Signal::from_positive_intervals(&[Interval::bounded(0, 3), Interval::unbounded(5)])
         );
     }
 
@@ -141,11 +132,8 @@ mod test {
         let until = lhs.until(&Interval::bounded(0, 1), &rhs);
 
         assert_eq!(
-            until.into_intervals(),
-            vec![
-                (Interval::bounded(0, 1), true),
-                (Interval::unbounded(2), false),
-            ]
+            until,
+            Signal::from_positive_intervals(&[Interval::bounded(0, 1)])
         );
     }
 
@@ -158,11 +146,8 @@ mod test {
         let until = lhs.until(&Interval::bounded(0, 3), &rhs);
 
         assert_eq!(
-            until.into_intervals(),
-            vec![
-                (Interval::singular(0), false),
-                (Interval::unbounded(1), true)
-            ]
+            until,
+            Signal::from_positive_intervals(&[Interval::unbounded(1)])
         );
     }
 
@@ -176,12 +161,8 @@ mod test {
         let until = lhs.until(&Interval::bounded(1, 3), &rhs);
 
         assert_eq!(
-            until.into_intervals(),
-            vec![
-                (Interval::singular(0), true),
-                (Interval::singular(1), false),
-                (Interval::unbounded(2), true)
-            ]
+            until,
+            Signal::from_positive_intervals(&[Interval::singular(0), Interval::unbounded(2)])
         );
     }
 }

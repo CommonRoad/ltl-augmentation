@@ -5,7 +5,7 @@ use num::{traits::SaturatingSub, Integer, Unsigned};
 
 use crate::sets::interval::Interval;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signal<T, V> {
     values: BTreeMap<T, V>,
 }
