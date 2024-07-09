@@ -124,12 +124,12 @@ mod tests {
             .into();
         let monitor = Monitor::new(phi);
 
-        let a_signal = Signal::from_positive_intervals(&[Interval::bounded(2_u32, 4)]);
-        let b_signal = Signal::from_positive_intervals(&[Interval::bounded(5, 7)]);
-        let c_signal = Signal::from_positive_intervals(&[Interval::bounded(10, 12)]);
+        let a_signal = Signal::from_positive_intervals([Interval::bounded(2_u32, 4)]);
+        let b_signal = Signal::from_positive_intervals([Interval::bounded(5, 7)]);
+        let c_signal = Signal::from_positive_intervals([Interval::bounded(10, 12)]);
         let trace = HashMap::from_iter([("a", a_signal), ("b", b_signal), ("c", c_signal)]);
 
-        let expected = Signal::from_positive_intervals(&[
+        let expected = Signal::from_positive_intervals([
             Interval::bounded(0_u32, 5),
             Interval::bounded(8, 10),
         ]);
