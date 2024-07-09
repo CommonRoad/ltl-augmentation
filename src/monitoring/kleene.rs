@@ -37,3 +37,33 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> Logical<T> for KleeneSignal<T
         )
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::signals::{kleene::Kleene, signal::Signal};
+
+    use super::*;
+
+    #[test]
+    fn test_disjunction() {
+        let lhs = KleeneSignal::from(Signal::indicator(
+            Interval::bounded(2_u32, 4),
+            Kleene::True,
+            Kleene::Unknown,
+        ));
+        let rhs = KleeneSignal::from(Signal::indicator(
+            Interval::bounded(5, 7),
+            Kleene::True,
+            Kleene::False,
+        ));
+        let expected = KleeneSignal::from(Signal::indicator(
+            Interval::bounded(2_u32, 7),
+            Kleene::True,
+            Kleene::Unknown,
+        ));
+
+        let actual = lhs.disjunction(&rhs);
+
+        assert_eq!(actual, expected);
+    }
+}

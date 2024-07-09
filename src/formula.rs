@@ -1,4 +1,7 @@
-use std::collections::BTreeSet;
+use std::{
+    collections::{BTreeSet, HashSet},
+    rc::Rc,
+};
 
 use itertools::Itertools;
 
@@ -171,6 +174,26 @@ impl NNFFormula {
 
     pub fn release(lhs: NNFFormula, int: Interval, rhs: NNFFormula) -> NNFFormula {
         NNFFormula::Release(Box::new(lhs), int, Box::new(rhs))
+    }
+
+    pub fn collect_aps(&self) -> HashSet<Rc<str>> {
+        match self {
+            NNFFormula::True | NNFFormula::False => HashSet::new(),
+            NNFFormula::AP(name, _) => HashSet::from([Rc::from(name.as_str())]),
+            NNFFormula::And(subs) | NNFFormula::Or(subs) => subs
+                .iter()
+                .map(|f| f.collect_aps())
+                .reduce(|mut acc, e| {
+                    acc.extend(e);
+                    acc
+                })
+                .unwrap_or_default(),
+            NNFFormula::Until(lhs, _, rhs) | NNFFormula::Release(lhs, _, rhs) => {
+                let mut set = lhs.collect_aps();
+                set.extend(rhs.collect_aps());
+                set
+            }
+        }
     }
 }
 

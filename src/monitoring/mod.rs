@@ -2,6 +2,7 @@ use crate::sets::interval::Interval;
 
 pub mod boolean;
 pub mod kleene;
+pub mod monitor;
 
 pub trait Logical<T> {
     fn negation(&self) -> Self;
