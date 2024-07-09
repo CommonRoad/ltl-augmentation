@@ -5,80 +5,87 @@ use std::{
 };
 
 use itertools::{iproduct, Itertools};
+use num::{Integer, Unsigned};
 
 use crate::formula::NNFFormula;
 
 type Clause<T> = BTreeSet<T>;
 type ClauseSet<T> = HashSet<Clause<T>>;
 
-pub fn min_dnf(nnf: NNFFormula) -> NNFFormula {
-    match nnf {
-        NNFFormula::True | NNFFormula::False | NNFFormula::AP(..) => nnf,
-        NNFFormula::Until(lhs, int, rhs) => NNFFormula::until(min_dnf(*lhs), int, min_dnf(*rhs)),
-        NNFFormula::Release(lhs, int, rhs) => {
-            NNFFormula::release(min_dnf(*lhs), int, min_dnf(*rhs))
+pub struct MinDNF<T>(std::marker::PhantomData<T>);
+
+impl<T: Integer + Unsigned + Copy + Hash> MinDNF<T> {
+    pub fn min_dnf(nnf: NNFFormula<T>) -> NNFFormula<T> {
+        match nnf {
+            NNFFormula::True | NNFFormula::False | NNFFormula::AP(..) => nnf,
+            NNFFormula::Until(lhs, int, rhs) => {
+                NNFFormula::until(Self::min_dnf(*lhs), int, Self::min_dnf(*rhs))
+            }
+            NNFFormula::Release(lhs, int, rhs) => {
+                NNFFormula::release(Self::min_dnf(*lhs), int, Self::min_dnf(*rhs))
+            }
+            _ => {
+                let clauses = Self::min_clause_set(nnf);
+                // Also all temporal "literals" in the DNF should be in minimal DNF
+                let clauses_with_minimal_literals = clauses
+                    .into_iter()
+                    .map(|clause| clause.into_iter().map(Self::min_dnf).collect_vec());
+                NNFFormula::or(clauses_with_minimal_literals.map(NNFFormula::and))
+            }
         }
-        _ => {
-            let clauses = min_clause_set(nnf);
-            // Also all temporal "literals" in the DNF should be in minimal DNF
-            let clauses_with_minimal_literals = clauses
+    }
+
+    pub fn min_clause_set(nnf: NNFFormula<T>) -> ClauseSet<NNFFormula<T>> {
+        let mut dnf = match nnf {
+            NNFFormula::True => Self::make_true_clause_set(),
+            NNFFormula::False => Self::make_false_clause_set(),
+            NNFFormula::AP(..) | NNFFormula::Until(..) | NNFFormula::Release(..) => {
+                Self::make_literal_clause_set(nnf)
+            }
+            NNFFormula::And(subs) => subs
                 .into_iter()
-                .map(|clause| clause.into_iter().map(min_dnf).collect_vec());
-            NNFFormula::or(clauses_with_minimal_literals.map(NNFFormula::and))
-        }
+                .map(Self::min_clause_set)
+                .reduce(min_product)
+                .unwrap_or_else(Self::make_true_clause_set),
+            NNFFormula::Or(subs) => subs
+                .into_iter()
+                .map(Self::min_clause_set)
+                .reduce(min_union)
+                .unwrap_or_else(Self::make_false_clause_set),
+        };
+        Self::remove_contradictions(&mut dnf);
+        dnf
+    }
+
+    fn make_true_clause_set<F: Ord + Hash>() -> ClauseSet<F> {
+        ClauseSet::from([Clause::new()])
+    }
+
+    fn make_false_clause_set<F>() -> ClauseSet<F> {
+        ClauseSet::new()
+    }
+
+    fn make_literal_clause_set<F: Ord + Hash>(literal: F) -> ClauseSet<F> {
+        ClauseSet::from([Clause::from([literal])])
+    }
+
+    fn remove_contradictions(dnf: &mut ClauseSet<NNFFormula<T>>) {
+        dnf.retain(|clause| !Self::is_contradiction(clause))
+    }
+
+    fn is_contradiction(clause: &Clause<NNFFormula<T>>) -> bool {
+        clause
+            .iter()
+            .any(|literal| clause.iter().any(|other| other.is_negation_of(literal)))
     }
 }
 
-pub fn min_clause_set(nnf: NNFFormula) -> ClauseSet<NNFFormula> {
-    let mut dnf = match nnf {
-        NNFFormula::True => make_true_clause_set(),
-        NNFFormula::False => make_false_clause_set(),
-        NNFFormula::AP(..) | NNFFormula::Until(..) | NNFFormula::Release(..) => {
-            make_literal_clause_set(nnf)
-        }
-        NNFFormula::And(subs) => subs
-            .into_iter()
-            .map(min_clause_set)
-            .reduce(min_product)
-            .unwrap_or_else(make_true_clause_set),
-        NNFFormula::Or(subs) => subs
-            .into_iter()
-            .map(min_clause_set)
-            .reduce(min_union)
-            .unwrap_or_else(make_false_clause_set),
-    };
-    remove_contradictions(&mut dnf);
-    dnf
-}
-
-fn make_true_clause_set<T: Ord + Hash>() -> ClauseSet<T> {
-    ClauseSet::from([Clause::new()])
-}
-
-fn make_false_clause_set<T>() -> ClauseSet<T> {
-    ClauseSet::new()
-}
-
-fn make_literal_clause_set<T: Ord + Hash>(literal: T) -> ClauseSet<T> {
-    ClauseSet::from([Clause::from([literal])])
-}
-
-fn remove_contradictions(dnf: &mut ClauseSet<NNFFormula>) {
-    dnf.retain(|clause| !is_contradiction(clause))
-}
-
-fn is_contradiction(clause: &Clause<NNFFormula>) -> bool {
-    clause
-        .iter()
-        .any(|literal| clause.iter().any(|other| other.is_negation_of(literal)))
-}
-
-fn min_product<T: Clone + Hash + Ord>(a: ClauseSet<T>, b: ClauseSet<T>) -> ClauseSet<T> {
-    let mut a_by_size: BTreeMap<usize, ClauseSet<T>> = BTreeMap::new();
+fn min_product<F: Clone + Hash + Ord>(a: ClauseSet<F>, b: ClauseSet<F>) -> ClauseSet<F> {
+    let mut a_by_size: BTreeMap<usize, ClauseSet<F>> = BTreeMap::new();
     a.into_iter().for_each(|clause| {
         a_by_size.entry(clause.len()).or_default().insert(clause);
     });
-    let mut b_by_size: BTreeMap<usize, ClauseSet<T>> = BTreeMap::new();
+    let mut b_by_size: BTreeMap<usize, ClauseSet<F>> = BTreeMap::new();
     b.into_iter().for_each(|clause| {
         b_by_size.entry(clause.len()).or_default().insert(clause);
     });
@@ -118,7 +125,7 @@ fn min_product<T: Clone + Hash + Ord>(a: ClauseSet<T>, b: ClauseSet<T>) -> Claus
     results
 }
 
-fn min_union<T: Ord + Hash>(a: ClauseSet<T>, b: ClauseSet<T>) -> ClauseSet<T> {
+fn min_union<F: Ord + Hash>(a: ClauseSet<F>, b: ClauseSet<F>) -> ClauseSet<F> {
     let mut a = a
         .into_iter()
         .sorted_unstable_by_key(|clause| clause.len())
@@ -141,11 +148,11 @@ fn min_union<T: Ord + Hash>(a: ClauseSet<T>, b: ClauseSet<T>) -> ClauseSet<T> {
     from_a
 }
 
-fn add_all_of_size_if_no_smaller_exists<T: Ord + Hash>(
+fn add_all_of_size_if_no_smaller_exists<F: Ord + Hash>(
     size: usize,
-    to_add: &mut Peekable<impl Iterator<Item = Clause<T>>>,
-    existing: &ClauseSet<T>,
-    out: &mut ClauseSet<T>,
+    to_add: &mut Peekable<impl Iterator<Item = Clause<F>>>,
+    existing: &ClauseSet<F>,
+    out: &mut ClauseSet<F>,
 ) {
     while let Some(v) = to_add.peek() {
         if v.len() > size {
@@ -158,13 +165,13 @@ fn add_all_of_size_if_no_smaller_exists<T: Ord + Hash>(
     }
 }
 
-fn remove_supersets<T: Ord>(subset: &Clause<T>, sets: &mut ClauseSet<T>) {
+fn remove_supersets<F: Ord>(subset: &Clause<F>, sets: &mut ClauseSet<F>) {
     sets.retain(|set| !subset.is_subset(set));
 }
 
-fn any_is_subset<'a, T: Ord + 'a>(
-    a: &Clause<T>,
-    bs: impl IntoIterator<Item = &'a Clause<T>>,
+fn any_is_subset<'a, F: Ord + 'a>(
+    a: &Clause<F>,
+    bs: impl IntoIterator<Item = &'a Clause<F>>,
 ) -> bool {
     bs.into_iter().any(|b| b.is_subset(a))
 }
@@ -180,14 +187,14 @@ mod test {
         let phi = mltl_parser::formula("a | (a & F[1, 1] b) | (F[0, 10] (b | c))")
             .expect("Syntax is correct");
         let dnf = mltl_parser::formula("a | (F[0, 10] (b | c))").expect("Syntax is correct");
-        assert_eq!(min_dnf(phi.into()), dnf.into());
+        assert_eq!(MinDNF::min_dnf(phi.into()), dnf.into());
     }
 
     #[test]
     fn test_min_dnf2() {
         let phi = mltl_parser::formula("(a -> b) & a").expect("Syntax is correct");
         let dnf = mltl_parser::formula("a & b").expect("Syntax is correct");
-        assert_eq!(min_dnf(phi.into()), dnf.into());
+        assert_eq!(MinDNF::min_dnf(phi.into()), dnf.into());
     }
 
     #[test]
@@ -195,7 +202,7 @@ mod test {
         let a = ClauseSet::from([Clause::from([1]), Clause::from([1, 2, 3])]);
         let b = ClauseSet::from([Clause::from([2, 3]), Clause::from([1, 2])]);
         let c = ClauseSet::from([Clause::from([1]), Clause::from([2, 3])]);
-        assert_eq!(super::min_union(a, b), c);
+        assert_eq!(min_union(a, b), c);
     }
 
     #[test]
@@ -203,6 +210,6 @@ mod test {
         let a = ClauseSet::from([Clause::from([1]), Clause::from([1, 2, 3])]);
         let b = ClauseSet::from([Clause::from([2, 3]), Clause::from([1, 2])]);
         let c = ClauseSet::from([Clause::from([1, 2])]);
-        assert_eq!(super::min_product(a, b), c);
+        assert_eq!(min_product(a, b), c);
     }
 }

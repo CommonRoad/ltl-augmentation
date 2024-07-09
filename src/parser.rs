@@ -1,8 +1,13 @@
-use crate::{formula::Formula, interval::Interval};
+use std::rc::Rc;
+
+use crate::{
+    formula::{AtomicProposition, Formula},
+    sets::interval::Interval,
+};
 
 peg::parser! {
     pub grammar mltl_parser() for str {
-        pub rule formula() -> Formula
+        pub rule formula() -> Formula<u32>
             = precedence! {
                 lhs:@ __ int:until_operator() __ rhs:(@) { Formula::until(lhs, int, rhs) }
                 lhs:@ __ int:release_operator() __ rhs:(@) { Formula::release(lhs, int, rhs) }
@@ -18,13 +23,13 @@ peg::parser! {
                 --
                 not_operator() _ sub:@ { Formula::negated(sub) }
                 --
-                ap:atomic_proposition() { ap }
+                ap:atomic_proposition() { Formula::AP(ap) }
                 --
                 "(" f:formula() ")" { f }
             }
 
-        rule atomic_proposition() -> Formula
-            = name:$(['a'..='z'] ['a'..='z' | 'A'..='Z' | '0'..='9']*) { Formula::AP(name.to_string()) }
+        rule atomic_proposition() -> AtomicProposition
+            = name:$(['a'..='z'] ['a'..='z' | 'A'..='Z' | '0'..='9']*) { AtomicProposition { name: Rc::from(name), negated: false } }
 
         rule not_operator() = "!"
 
@@ -34,22 +39,28 @@ peg::parser! {
 
         rule implies_operator() = "->"
 
-        rule until_operator() -> Interval = "U" i:interval() { i }
+        rule until_operator() -> Interval<u32> = "U" i:interval() { i }
 
-        rule release_operator() -> Interval = "R" i:interval() { i }
+        rule release_operator() -> Interval<u32> = "R" i:interval() { i }
 
-        rule finally_operator() -> Interval = "F" i:interval() { i }
+        rule finally_operator() -> Interval<u32> = "F" i:interval() { i }
 
-        rule globally_operator() -> Interval = "G" i:interval() { i }
+        rule globally_operator() -> Interval<u32> = "G" i:interval() { i }
 
-        rule interval() -> Interval
-            = "[" start:number() _ "," _ end:number() "]" {?
-                if start <= end {
-                    Ok(Interval::from_endpoints(start, end))
+        rule interval() -> Interval<u32>
+            = unbounded_interval() / bounded_interval() / expected!("Bounded or unbounded interval")
+
+        rule bounded_interval() -> Interval<u32>
+            = "[" lb:number() _ "," _ ub:number() "]" {?
+                if lb <= ub {
+                    Ok(Interval::bounded(lb, ub))
                 } else {
-                    Err("invalid interval")
+                    Err("Invalid bounded interval: Upper bound is smaller than lower bound")
                 }
             }
+
+        rule unbounded_interval() -> Interval<u32>
+            = "[" lb:number() _ "," _ "*" "]" { Interval::unbounded(lb) }
 
         rule number() -> u32
             = n:$(['0'..='9']+) {? n.parse().or(Err("u32")) }
@@ -65,10 +76,19 @@ peg::parser! {
 mod test {
     use super::*;
 
-    fn get_aps() -> (Formula, Formula, Formula) {
-        let a = Formula::AP("a".to_string());
-        let b = Formula::AP("b".to_string());
-        let c = Formula::AP("c".to_string());
+    fn get_aps<T>() -> (Formula<T>, Formula<T>, Formula<T>) {
+        let a = Formula::AP(AtomicProposition {
+            name: Rc::from("a"),
+            negated: false,
+        });
+        let b = Formula::AP(AtomicProposition {
+            name: Rc::from("b"),
+            negated: false,
+        });
+        let c = Formula::AP(AtomicProposition {
+            name: Rc::from("c"),
+            negated: false,
+        });
         (a, b, c)
     }
 
@@ -82,10 +102,10 @@ mod test {
             formula,
             Formula::until(
                 Formula::negated(a),
-                Interval::from_endpoints(1, 2),
+                Interval::bounded(1, 2),
                 Formula::negated(Formula::and(vec![
                     b,
-                    Formula::finally(Interval::from_endpoints(0, 3), c)
+                    Formula::finally(Interval::bounded(0, 3), c)
                 ]))
             )
         );
@@ -104,8 +124,8 @@ mod test {
             mltl_parser::formula("a U[0, 1] b U[1, 2] c").unwrap(),
             Formula::until(
                 a,
-                Interval::from_endpoints(0, 1),
-                Formula::until(b, Interval::from_endpoints(1, 2), c)
+                Interval::bounded(0, 1),
+                Formula::until(b, Interval::bounded(1, 2), c)
             )
         );
     }

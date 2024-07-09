@@ -1,15 +1,15 @@
 use std::{
     collections::{HashMap, HashSet},
+    hash::Hash,
     rc::Rc,
 };
 
-use crate::{formula::NNFFormula, interval::Interval, sets::interval_set::IntervalSet};
+use num::{traits::SaturatingSub, Integer, Unsigned};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct AtomicProposition {
-    pub ap_name: Rc<str>,
-    pub negated: bool,
-}
+use crate::{
+    formula::{AtomicProposition, NNFFormula},
+    sets::{interval::Interval, interval_set::IntervalSet},
+};
 
 trait Merge<T> {
     fn merge<F>(&mut self, other: Self, f: F)
@@ -31,55 +31,26 @@ impl<K: Eq + std::hash::Hash + Clone, V: Default> Merge<V> for HashMap<K, V> {
     }
 }
 
-pub fn collect_aps(nnf: &NNFFormula) -> HashSet<AtomicProposition> {
-    match nnf {
-        NNFFormula::True | NNFFormula::False => HashSet::new(),
-        NNFFormula::AP(name, negated) => HashSet::from([AtomicProposition {
-            ap_name: Rc::from(name.as_str()),
-            negated: *negated,
-        }]),
-        NNFFormula::And(subs) | NNFFormula::Or(subs) => subs
-            .iter()
-            .map(collect_aps)
-            .reduce(|mut acc, e| {
-                acc.extend(e);
-                acc
-            })
-            .unwrap_or_default(),
-        NNFFormula::Until(lhs, _, rhs) | NNFFormula::Release(lhs, _, rhs) => {
-            let mut set = collect_aps(lhs);
-            set.extend(collect_aps(rhs));
-            set
-        }
-    }
-}
-
-pub fn necessary_intervals(nnf: &NNFFormula) -> HashMap<AtomicProposition, IntervalSet> {
-    let mut intervals = collect_necessary_intervals(nnf, &collect_aps(nnf));
+pub fn necessary_intervals<T: Integer + Unsigned + Copy + Hash + SaturatingSub>(
+    nnf: &NNFFormula<T>,
+) -> HashMap<AtomicProposition, IntervalSet<T>> {
+    let mut intervals = collect_necessary_intervals(nnf, &nnf.collect_aps());
     intervals.retain(|_, v| !v.is_empty());
     intervals
 }
 
-fn collect_necessary_intervals(
-    nnf: &NNFFormula,
+fn collect_necessary_intervals<T: Integer + Unsigned + Copy + Hash + SaturatingSub>(
+    nnf: &NNFFormula<T>,
     all_aps: &HashSet<AtomicProposition>,
-) -> HashMap<AtomicProposition, IntervalSet> {
+) -> HashMap<AtomicProposition, IntervalSet<T>> {
     match nnf {
         NNFFormula::True => HashMap::new(), // True requires nothing
         NNFFormula::False => all_aps
             .iter()
-            .map(|ap| (ap.clone(), Interval::from_endpoints(0, 0).into()))
+            .map(|ap| (ap.clone(), Interval::singular(T::zero()).into()))
             .collect(), // False requires everything
-        NNFFormula::AP(name, negated) => {
-            let mut map = HashMap::new();
-            map.insert(
-                AtomicProposition {
-                    ap_name: Rc::from(name.as_str()),
-                    negated: *negated,
-                },
-                Interval::from_endpoints(0, 0).into(),
-            );
-            map
+        NNFFormula::AP(ap) => {
+            HashMap::from_iter([(ap.clone(), Interval::singular(T::zero()).into())])
         }
         NNFFormula::And(subs) => subs
             .iter()
@@ -97,8 +68,8 @@ fn collect_necessary_intervals(
                 acc
             })
             .unwrap_or_default(),
-        NNFFormula::Until(_, shift @ Interval::Range(lb, ub), rhs)
-        | NNFFormula::Release(_, shift @ Interval::Range(lb, ub), rhs)
+        NNFFormula::Until(_, shift @ Interval::Bounded { lb, ub }, rhs)
+        | NNFFormula::Release(_, shift @ Interval::Bounded { lb, ub }, rhs)
             if lb == ub =>
         {
             let rhs_intervals = collect_necessary_intervals(rhs, all_aps);
@@ -109,10 +80,10 @@ fn collect_necessary_intervals(
         }
         NNFFormula::Until(lhs, int, rhs) => match int {
             Interval::Empty => panic!("Malformed formula: Empty interval in Until"),
-            Interval::Range(lb, _) => {
+            Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => {
                 let mut lhs_intervals = collect_necessary_intervals(lhs, all_aps);
                 let rhs_intervals = collect_necessary_intervals(rhs, all_aps);
-                let shift = Interval::from_endpoints(*lb, *lb);
+                let shift = Interval::singular(*lb);
                 lhs_intervals.merge(rhs_intervals, |lhs, rhs| {
                     lhs.minkowski_sum(&shift)
                         .intersect(rhs.minkowski_sum(&shift))
@@ -122,7 +93,7 @@ fn collect_necessary_intervals(
         },
         NNFFormula::Release(lhs, int, rhs) if **lhs == NNFFormula::False => match int {
             Interval::Empty => panic!("Malformed formula: Empty interval in Release"),
-            shift @ Interval::Range(..) => {
+            shift => {
                 let rhs_intervals = collect_necessary_intervals(rhs, all_aps);
                 rhs_intervals
                     .into_iter()
@@ -132,11 +103,11 @@ fn collect_necessary_intervals(
         },
         NNFFormula::Release(lhs, int, rhs) => match int {
             Interval::Empty => panic!("Malformed formula: Empty interval in Until"),
-            Interval::Range(lb, _) => {
+            Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => {
                 let mut lhs_intervals = collect_necessary_intervals(lhs, all_aps);
                 let rhs_intervals = collect_necessary_intervals(rhs, all_aps);
-                let shift_lb = Interval::from_endpoints(*lb, *lb);
-                let shift_suc_lb = Interval::from_endpoints(lb + 1, lb + 1);
+                let shift_lb = Interval::singular(*lb);
+                let shift_suc_lb = Interval::singular(*lb + T::one());
                 lhs_intervals.merge(rhs_intervals, |lhs, rhs| {
                     // Rhs must hold at lb
                     rhs.clone().minkowski_sum(&shift_lb).union(
@@ -165,10 +136,10 @@ mod test {
         let intervals = necessary_intervals(&phi);
         let expected = HashMap::from([(
             AtomicProposition {
-                ap_name: Rc::from("a"),
+                name: Rc::from("a"),
                 negated: false,
             },
-            Interval::from_endpoints(0, 0).into(),
+            Interval::singular(0).into(),
         )]);
         assert_eq!(intervals, expected);
     }
@@ -181,10 +152,10 @@ mod test {
         let intervals = necessary_intervals(&phi);
         let expected = HashMap::from([(
             AtomicProposition {
-                ap_name: Rc::from("a"),
+                name: Rc::from("a"),
                 negated: false,
             },
-            Interval::from_endpoints(1, 1).into(),
+            Interval::singular(1).into(),
         )]);
         assert_eq!(intervals, expected);
     }
@@ -198,17 +169,17 @@ mod test {
         let expected = HashMap::from([
             (
                 AtomicProposition {
-                    ap_name: Rc::from("a"),
+                    name: Rc::from("a"),
                     negated: false,
                 },
-                Interval::from_endpoints(0, 10).into(),
+                Interval::bounded(0, 10).into(),
             ),
             (
                 AtomicProposition {
-                    ap_name: Rc::from("b"),
+                    name: Rc::from("b"),
                     negated: false,
                 },
-                Interval::from_endpoints(0, 10).into(),
+                Interval::bounded(0, 10).into(),
             ),
         ]);
         assert_eq!(intervals, expected);
@@ -223,17 +194,17 @@ mod test {
         let expected = HashMap::from([
             (
                 AtomicProposition {
-                    ap_name: Rc::from("a"),
+                    name: Rc::from("a"),
                     negated: false,
                 },
-                Interval::from_endpoints(5, 6).into(),
+                Interval::bounded(5, 6).into(),
             ),
             (
                 AtomicProposition {
-                    ap_name: Rc::from("b"),
+                    name: Rc::from("b"),
                     negated: false,
                 },
-                Interval::from_endpoints(5, 5).into(),
+                Interval::singular(5).into(),
             ),
         ]);
         assert_eq!(intervals, expected);
@@ -247,10 +218,10 @@ mod test {
         let intervals = necessary_intervals(&phi);
         let expected = HashMap::from([(
             AtomicProposition {
-                ap_name: Rc::from("b"),
+                name: Rc::from("b"),
                 negated: false,
             },
-            Interval::from_endpoints(2, 2).into(),
+            Interval::singular(2).into(),
         )]);
         assert_eq!(intervals, expected);
     }
@@ -263,10 +234,10 @@ mod test {
         let intervals = necessary_intervals(&phi);
         let expected = HashMap::from([(
             AtomicProposition {
-                ap_name: Rc::from("c"),
+                name: Rc::from("c"),
                 negated: false,
             },
-            Interval::from_endpoints(3, 4).into(),
+            Interval::bounded(3, 4).into(),
         )]);
         assert_eq!(intervals, expected);
     }

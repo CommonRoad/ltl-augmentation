@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    hash::Hash,
     rc::Rc,
 };
 
@@ -7,7 +8,7 @@ use itertools::Itertools;
 use num::{traits::SaturatingSub, Integer, Unsigned};
 
 use crate::{
-    formula::NNFFormula,
+    formula::{AtomicProposition, NNFFormula},
     sets::interval::Interval,
     signals::{kleene::Kleene, signal::Signal},
 };
@@ -39,13 +40,13 @@ impl TruthValue for Kleene {
     }
 }
 
-pub struct Monitor {
-    formula: NNFFormula,
-    atomic_propositions: HashSet<Rc<str>>,
+pub struct Monitor<T> {
+    formula: NNFFormula<T>,
+    atomic_propositions: HashSet<AtomicProposition>,
 }
 
-impl Monitor {
-    pub fn new(formula: NNFFormula) -> Self {
+impl<T: Integer + Unsigned + Copy + SaturatingSub + Hash> Monitor<T> {
+    pub fn new(formula: NNFFormula<T>) -> Self {
         let atomic_propositions = formula.collect_aps();
         Monitor {
             formula,
@@ -53,17 +54,15 @@ impl Monitor {
         }
     }
 
-    pub fn monitor<T, V, Out>(&self, trace: &HashMap<&str, Signal<T, V>>) -> Out
+    pub fn monitor<V, Out>(&self, trace: &HashMap<&str, Signal<T, V>>) -> Out
     where
-        T: Integer + Unsigned + Copy + SaturatingSub + From<u32>,
         V: TruthValue + Eq + Clone,
         Out: Logical<T> + From<Signal<T, V>>,
     {
-        println!("Monitoring formula: {:?}", self.formula);
         let missing_propositions = self
             .atomic_propositions
             .iter()
-            .filter(|ap| !trace.contains_key(ap.as_ref()))
+            .filter(|ap| !trace.contains_key(ap.name.as_ref()))
             .collect_vec();
         if !missing_propositions.is_empty() {
             panic!(
@@ -74,18 +73,17 @@ impl Monitor {
         Monitor::monitor_rec(&self.formula, trace)
     }
 
-    fn monitor_rec<T, V, Out>(formula: &NNFFormula, trace: &HashMap<&str, Signal<T, V>>) -> Out
+    fn monitor_rec<V, Out>(formula: &NNFFormula<T>, trace: &HashMap<&str, Signal<T, V>>) -> Out
     where
-        T: Integer + Unsigned + Copy + SaturatingSub + From<u32>,
         V: TruthValue + Eq + Clone,
         Out: Logical<T> + From<Signal<T, V>>,
     {
         match formula {
             NNFFormula::True => Signal::uniform(V::top()).into(),
             NNFFormula::False => Signal::uniform(V::bottom()).into(),
-            NNFFormula::AP(name, negated) => {
-                let signal = trace.get(name.as_str()).unwrap();
-                if *negated {
+            NNFFormula::AP(ap) => {
+                let signal = trace.get(ap.name.as_ref()).unwrap();
+                if ap.negated {
                     Out::from(signal.clone()).negation()
                 } else {
                     signal.clone().into()
@@ -102,26 +100,14 @@ impl Monitor {
                 .reduce(|acc: Out, e| acc.disjunction(&e))
                 .unwrap_or_else(|| Signal::uniform(V::bottom()).into()),
             NNFFormula::Until(lhs, interval, rhs) => {
-                let int = match interval {
-                    crate::interval::Interval::Empty => Interval::empty(),
-                    crate::interval::Interval::Range(lb, ub) => {
-                        Interval::bounded(T::from(*lb), T::from(*ub))
-                    }
-                };
                 let lhs_signal: Out = Monitor::monitor_rec(lhs, trace);
                 let rhs_signal = Monitor::monitor_rec(rhs, trace);
-                lhs_signal.until(&int, &rhs_signal)
+                lhs_signal.until(interval, &rhs_signal)
             }
             NNFFormula::Release(lhs, interval, rhs) => {
-                let int = match interval {
-                    crate::interval::Interval::Empty => Interval::empty(),
-                    crate::interval::Interval::Range(lb, ub) => {
-                        Interval::bounded(T::from(*lb), T::from(*ub))
-                    }
-                };
                 let lhs_signal: Out = Monitor::monitor_rec(lhs, trace);
                 let rhs_signal = Monitor::monitor_rec(rhs, trace);
-                lhs_signal.release(&int, &rhs_signal)
+                lhs_signal.release(interval, &rhs_signal)
             }
         }
     }

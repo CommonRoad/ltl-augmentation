@@ -97,10 +97,7 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> IntervalSet<T> {
         IntervalSet { bounds }
     }
 
-    pub fn intersect(self, other: Self) -> Self
-    where
-        T: std::fmt::Debug,
-    {
+    pub fn intersect(self, other: Self) -> Self {
         let mut self_active = false;
         let mut other_active = false;
 

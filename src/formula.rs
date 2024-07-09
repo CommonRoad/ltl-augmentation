@@ -1,38 +1,46 @@
 use std::{
     collections::{BTreeSet, HashSet},
+    hash::Hash,
     rc::Rc,
 };
 
 use itertools::Itertools;
+use num::{Integer, Unsigned};
 
-use crate::interval::Interval;
+use crate::sets::interval::Interval;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Formula {
+pub struct AtomicProposition {
+    pub name: Rc<str>,
+    pub negated: bool,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Formula<T> {
     // atomic proposition + constants
-    AP(String),
+    AP(AtomicProposition),
     True,
     False,
 
     // propositional connectives
-    Not(Box<Formula>),
-    And(BTreeSet<Formula>),
-    Or(BTreeSet<Formula>),
-    Implies(Box<Formula>, Box<Formula>),
+    Not(Box<Formula<T>>),
+    And(BTreeSet<Formula<T>>),
+    Or(BTreeSet<Formula<T>>),
+    Implies(Box<Formula<T>>, Box<Formula<T>>),
 
     // temporal connectives
-    Until(Box<Formula>, Interval, Box<Formula>),
-    Release(Box<Formula>, Interval, Box<Formula>),
-    Globally(Interval, Box<Formula>),
-    Finally(Interval, Box<Formula>),
+    Until(Box<Formula<T>>, Interval<T>, Box<Formula<T>>),
+    Release(Box<Formula<T>>, Interval<T>, Box<Formula<T>>),
+    Globally(Interval<T>, Box<Formula<T>>),
+    Finally(Interval<T>, Box<Formula<T>>),
 }
 
-impl Formula {
-    pub fn negated(sub: Formula) -> Formula {
+impl<T: Integer + Unsigned + Copy> Formula<T> {
+    pub fn negated(sub: Self) -> Self {
         Formula::Not(Box::new(sub))
     }
 
-    pub fn and(subs: impl IntoIterator<Item = Formula>) -> Formula {
+    pub fn and(subs: impl IntoIterator<Item = Self>) -> Self {
         let mut subs: BTreeSet<_> = subs.into_iter().collect();
         match subs.len() {
             0 => Formula::True,
@@ -41,7 +49,7 @@ impl Formula {
         }
     }
 
-    pub fn or(subs: impl IntoIterator<Item = Formula>) -> Formula {
+    pub fn or(subs: impl IntoIterator<Item = Self>) -> Self {
         let mut subs: BTreeSet<_> = subs.into_iter().collect();
         match subs.len() {
             0 => Formula::False,
@@ -50,47 +58,52 @@ impl Formula {
         }
     }
 
-    pub fn implies(lhs: Formula, rhs: Formula) -> Formula {
+    pub fn implies(lhs: Self, rhs: Self) -> Self {
         Formula::Implies(Box::new(lhs), Box::new(rhs))
     }
 
-    pub fn until(lhs: Formula, int: Interval, rhs: Formula) -> Formula {
+    pub fn until(lhs: Self, int: Interval<T>, rhs: Self) -> Self {
         Formula::Until(Box::new(lhs), int, Box::new(rhs))
     }
 
-    pub fn release(lhs: Formula, int: Interval, rhs: Formula) -> Formula {
+    pub fn release(lhs: Self, int: Interval<T>, rhs: Self) -> Self {
         Formula::Release(Box::new(lhs), int, Box::new(rhs))
     }
 
-    pub fn globally(int: Interval, sub: Formula) -> Formula {
+    pub fn globally(int: Interval<T>, sub: Self) -> Self {
         Formula::Globally(int, Box::new(sub))
     }
 
-    pub fn finally(int: Interval, sub: Formula) -> Formula {
+    pub fn finally(int: Interval<T>, sub: Self) -> Self {
         Formula::Finally(int, Box::new(sub))
     }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum NNFFormula {
+pub enum NNFFormula<T> {
     // atomic proposition + constants
-    AP(String, bool),
+    AP(AtomicProposition),
     True,
     False,
 
     // propositional connectives
-    And(BTreeSet<NNFFormula>),
-    Or(BTreeSet<NNFFormula>),
+    And(BTreeSet<NNFFormula<T>>),
+    Or(BTreeSet<NNFFormula<T>>),
 
     // temporal connectives
-    Until(Box<NNFFormula>, Interval, Box<NNFFormula>),
-    Release(Box<NNFFormula>, Interval, Box<NNFFormula>),
+    Until(Box<NNFFormula<T>>, Interval<T>, Box<NNFFormula<T>>),
+    Release(Box<NNFFormula<T>>, Interval<T>, Box<NNFFormula<T>>),
 }
 
-impl NNFFormula {
-    pub fn negated(self) -> NNFFormula {
+impl<T: Integer + Unsigned + Copy + Hash> NNFFormula<T> {
+    pub fn negated(self) -> Self {
         match self {
-            NNFFormula::AP(name, negated) => NNFFormula::AP(name, !negated),
+            NNFFormula::AP(AtomicProposition { name, negated }) => {
+                NNFFormula::AP(AtomicProposition {
+                    name,
+                    negated: !negated,
+                })
+            }
             NNFFormula::True => NNFFormula::False,
             NNFFormula::False => NNFFormula::True,
             NNFFormula::And(subs) => NNFFormula::or(subs.into_iter().map(|f| f.negated())),
@@ -104,12 +117,10 @@ impl NNFFormula {
         }
     }
 
-    pub fn is_negation_of(&self, other: &NNFFormula) -> bool {
+    pub fn is_negation_of(&self, other: &Self) -> bool {
         match (self, other) {
-            (NNFFormula::AP(name1, negated1), NNFFormula::AP(name2, negated2))
-                if name1 == name2 =>
-            {
-                negated1 != negated2
+            (NNFFormula::AP(ap1), NNFFormula::AP(ap2)) if ap1.name == ap2.name => {
+                ap1.negated != ap2.negated
             }
             (NNFFormula::True, NNFFormula::False) | (NNFFormula::False, NNFFormula::True) => true,
             (NNFFormula::And(subs1), NNFFormula::Or(subs2))
@@ -130,7 +141,7 @@ impl NNFFormula {
         }
     }
 
-    pub fn and(subs: impl IntoIterator<Item = NNFFormula>) -> NNFFormula {
+    pub fn and(subs: impl IntoIterator<Item = Self>) -> Self {
         let mut subs: BTreeSet<_> = subs.into_iter().collect();
         match subs.len() {
             0 => NNFFormula::True,
@@ -149,7 +160,7 @@ impl NNFFormula {
         }
     }
 
-    pub fn or(subs: impl IntoIterator<Item = NNFFormula>) -> NNFFormula {
+    pub fn or(subs: impl IntoIterator<Item = Self>) -> Self {
         let mut subs: BTreeSet<_> = subs.into_iter().collect();
         match subs.len() {
             0 => NNFFormula::False,
@@ -168,18 +179,18 @@ impl NNFFormula {
         }
     }
 
-    pub fn until(lhs: NNFFormula, int: Interval, rhs: NNFFormula) -> NNFFormula {
+    pub fn until(lhs: Self, int: Interval<T>, rhs: Self) -> Self {
         NNFFormula::Until(Box::new(lhs), int, Box::new(rhs))
     }
 
-    pub fn release(lhs: NNFFormula, int: Interval, rhs: NNFFormula) -> NNFFormula {
+    pub fn release(lhs: Self, int: Interval<T>, rhs: Self) -> Self {
         NNFFormula::Release(Box::new(lhs), int, Box::new(rhs))
     }
 
-    pub fn collect_aps(&self) -> HashSet<Rc<str>> {
+    pub fn collect_aps(&self) -> HashSet<AtomicProposition> {
         match self {
             NNFFormula::True | NNFFormula::False => HashSet::new(),
-            NNFFormula::AP(name, _) => HashSet::from([Rc::from(name.as_str())]),
+            NNFFormula::AP(ap) => HashSet::from([ap.clone()]),
             NNFFormula::And(subs) | NNFFormula::Or(subs) => subs
                 .iter()
                 .map(|f| f.collect_aps())
@@ -197,10 +208,10 @@ impl NNFFormula {
     }
 }
 
-impl From<Formula> for NNFFormula {
-    fn from(formula: Formula) -> NNFFormula {
+impl<T: Integer + Unsigned + Copy + Hash> From<Formula<T>> for NNFFormula<T> {
+    fn from(formula: Formula<T>) -> Self {
         match formula {
-            Formula::AP(name) => NNFFormula::AP(name, false),
+            Formula::AP(ap) => NNFFormula::AP(ap),
             Formula::True => NNFFormula::True,
             Formula::False => NNFFormula::False,
 
@@ -219,7 +230,12 @@ impl From<Formula> for NNFFormula {
             }
 
             Formula::Not(sub) => match *sub {
-                Formula::AP(name) => NNFFormula::AP(name, true),
+                Formula::AP(AtomicProposition { name, negated }) => {
+                    NNFFormula::AP(AtomicProposition {
+                        name,
+                        negated: !negated,
+                    })
+                }
                 Formula::True => NNFFormula::False,
                 Formula::False => NNFFormula::True,
 
@@ -247,30 +263,32 @@ impl From<Formula> for NNFFormula {
     }
 }
 
-impl From<Box<Formula>> for Box<NNFFormula> {
-    fn from(formula: Box<Formula>) -> Box<NNFFormula> {
+impl<T: Integer + Unsigned + Copy + Hash> From<Box<Formula<T>>> for Box<NNFFormula<T>> {
+    fn from(formula: Box<Formula<T>>) -> Self {
         Box::new(NNFFormula::from(*formula))
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use crate::parser::mltl_parser;
 
-    use crate::interval::Interval;
+    use super::*;
 
     #[test]
     fn test_nnf_simple() {
-        let formula = Formula::negated(Formula::until(
-            Formula::AP("a".to_string()),
-            Interval::Range(3, 5),
-            Formula::negated(Formula::AP("b".to_string())),
-        ));
+        let formula = mltl_parser::formula("!(a U[3, 5] !b)").expect("Syntax is correct");
 
         let nnf = NNFFormula::release(
-            NNFFormula::AP("a".to_string(), true),
-            Interval::Range(3, 5),
-            NNFFormula::AP("b".to_string(), false),
+            NNFFormula::AP(AtomicProposition {
+                name: Rc::from("a"),
+                negated: true,
+            }),
+            Interval::bounded(3, 5),
+            NNFFormula::AP(AtomicProposition {
+                name: Rc::from("b"),
+                negated: false,
+            }),
         );
 
         assert_eq!(NNFFormula::from(formula), nnf);
@@ -278,25 +296,28 @@ mod test {
 
     #[test]
     fn test_nnf_complex() {
-        let formula = Formula::negated(Formula::release(
-            Formula::implies(Formula::AP("a".to_string()), Formula::AP("c".to_string())),
-            Interval::Range(3, 5),
-            Formula::finally(
-                Interval::Range(0, 7),
-                Formula::negated(Formula::AP("b".to_string())),
-            ),
-        ));
+        let formula =
+            mltl_parser::formula("!((a -> c) R[3, 5] (F[0, 7] !b))").expect("Syntax is correct");
 
         let nnf = NNFFormula::until(
             NNFFormula::and([
-                NNFFormula::AP("a".to_string(), false),
-                NNFFormula::AP("c".to_string(), true),
+                NNFFormula::AP(AtomicProposition {
+                    name: Rc::from("a"),
+                    negated: false,
+                }),
+                NNFFormula::AP(AtomicProposition {
+                    name: Rc::from("c"),
+                    negated: true,
+                }),
             ]),
-            Interval::Range(3, 5),
+            Interval::bounded(3, 5),
             NNFFormula::release(
                 NNFFormula::False,
-                Interval::Range(0, 7),
-                NNFFormula::AP("b".to_string(), false),
+                Interval::bounded(0, 7),
+                NNFFormula::AP(AtomicProposition {
+                    name: Rc::from("b"),
+                    negated: false,
+                }),
             ),
         );
 

@@ -225,6 +225,18 @@ impl<T: Integer + Unsigned + Copy, V: Default + Eq + Clone> FromIterator<(Interv
     }
 }
 
+impl<T: Integer + Unsigned + Copy + SaturatingSub, V: Default + Eq + Clone> IntoIterator
+    for Signal<T, V>
+{
+    type Item = (Interval<T>, V);
+
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.into_intervals().into_iter()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
