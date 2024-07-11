@@ -24,12 +24,12 @@ impl<T: Integer + Unsigned + Copy, V: Eq> Signal<T, V> {
         Signal { values }
     }
 
-    pub fn indicator(interval: Interval<T>, v: V, default: V) -> Self
+    pub fn indicator(interval: &Interval<T>, v: V, default: V) -> Self
     where
         V: Clone,
     {
         let mut signal = Signal::uniform(default);
-        signal.set(&interval, v);
+        signal.set(interval, v);
         signal
     }
 

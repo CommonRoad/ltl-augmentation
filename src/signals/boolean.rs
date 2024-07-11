@@ -4,7 +4,9 @@ use num::{Integer, Unsigned};
 
 use crate::{sets::interval::Interval, signals::signal::Signal};
 
-impl<T: Integer + Unsigned + Copy> Signal<T, bool> {
+pub type BooleanSignal<T> = Signal<T, bool>;
+
+impl<T: Integer + Unsigned + Copy> BooleanSignal<T> {
     pub fn from_positive_intervals<B>(positive_intervals: impl IntoIterator<Item = B>) -> Self
     where
         B: Borrow<Interval<T>>,

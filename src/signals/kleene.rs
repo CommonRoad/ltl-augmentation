@@ -1,14 +1,6 @@
 use num::{Integer, Unsigned};
 
-use super::signal::Signal;
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Kleene {
-    True,
-    #[default]
-    Unknown,
-    False,
-}
+use super::{signal::Signal, truth_values::Kleene};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KleeneSignal<T> {

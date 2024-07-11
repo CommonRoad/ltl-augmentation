@@ -81,10 +81,12 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> Default for IntervalSet<T> {
     }
 }
 
-impl<T: Integer + Unsigned + Copy + SaturatingSub> From<Interval<T>> for IntervalSet<T> {
-    fn from(interval: Interval<T>) -> Self {
+impl<T: Integer + Unsigned + Copy + SaturatingSub, B: Borrow<Interval<T>>> From<B>
+    for IntervalSet<T>
+{
+    fn from(interval: B) -> Self {
         IntervalSet {
-            included: Signal::indicator(interval, true, false),
+            included: Signal::indicator(interval.borrow(), true, false),
         }
     }
 }
