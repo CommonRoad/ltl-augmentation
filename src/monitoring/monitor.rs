@@ -111,9 +111,10 @@ mod tests {
     use rstest::*;
 
     use crate::{
+        monitoring::{boolean::BooleanMonitorSignal, kleene::KleeneMonitorSignal},
         parser::mltl_parser,
         sets::interval::Interval,
-        signals::{boolean::BooleanSignal, kleene::KleeneSignal, truth_values::Kleene},
+        signals::{boolean::BooleanSignal, truth_values::Kleene},
     };
 
     use super::*;
@@ -132,7 +133,7 @@ mod tests {
         let c_signal = BooleanSignal::from_positive_intervals([Interval::bounded(10, 12)]);
         let trace = HashMap::from_iter([("a", a_signal), ("b", b_signal), ("c", c_signal)]);
 
-        let monitor = Monitor::new::<BooleanSignal<_>>(&phi, &trace);
+        let monitor = Monitor::new::<BooleanMonitorSignal<_>>(&phi, &trace);
 
         let expected = BooleanSignal::from_positive_intervals([
             Interval::bounded(0_u32, 5),
@@ -165,7 +166,7 @@ mod tests {
         let c_signal = Signal::indicator(&Interval::bounded(10, 12), Kleene::True, Kleene::Unknown);
         let trace = HashMap::from_iter([("a", a_signal), ("b", b_signal), ("c", c_signal)]);
 
-        let monitor = Monitor::new::<KleeneSignal<_>>(&phi, &trace);
+        let monitor = Monitor::new::<KleeneMonitorSignal<_>>(&phi, &trace);
 
         let mut expected =
             Signal::indicator(&Interval::bounded(0_u32, 5), Kleene::True, Kleene::Unknown);

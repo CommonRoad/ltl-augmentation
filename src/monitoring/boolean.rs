@@ -1,11 +1,16 @@
 use itertools::iproduct;
 use num::{traits::SaturatingSub, Integer, Unsigned};
 
-use crate::{sets::interval::Interval, signals::boolean::BooleanSignal};
+use crate::{
+    sets::interval::Interval,
+    signals::{boolean::BooleanSignal, signal::Signal},
+};
 
 use super::Logical;
 
-impl<T: Integer + Unsigned + Copy + SaturatingSub> Logical<T> for BooleanSignal<T> {
+pub type BooleanMonitorSignal<T> = Signal<T, bool>;
+
+impl<T: Integer + Unsigned + Copy + SaturatingSub> Logical<T> for BooleanMonitorSignal<T> {
     fn negation(&self) -> Self {
         self.map(|v| !v)
     }
