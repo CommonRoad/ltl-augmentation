@@ -3,12 +3,13 @@ use std::{
     hash::Hash,
 };
 
+use itertools::Itertools;
 use num::{traits::SaturatingSub, Integer, Unsigned};
 
 use crate::{
     formula::{AtomicProposition, NNFFormula},
     monitoring::monitor::Monitor,
-    sets::interval_set::IntervalSet,
+    sets::{interval::Interval, interval_set::IntervalSet},
     signals::truth_values::Kleene,
 };
 
@@ -73,33 +74,43 @@ where
             .reduce(NecessaryIntervals::union)
             .unwrap_or_default(),
         NNFFormula::Or(subs) => {
-            let from_cannot = subs
-                .iter()
-                .map(|f| {
-                    let others_cannot_hold = subs
+            // Look at all subsets (and their complements) of the disjunction subformulas
+            let subsets_with_rests = subs.iter().powerset().map(|set| {
+                let rest = subs.iter().filter(|f| !set.contains(f)).collect_vec();
+                (set, rest)
+            });
+
+            subsets_with_rests
+                .map(|(subset, rest)| {
+                    // For each subset, find the intervals where its complement cannot hold
+                    let rest_cannot_hold = rest
                         .iter()
-                        .filter(|&o| o != f)
-                        .map(|o| {
+                        .map(|f| {
                             IntervalSet::from_iter(
                                 knowledge
                                     .satisfaction_signals()
-                                    .get(o)
+                                    .get(f)
                                     .expect("knowledge should contain all subformulas")
                                     .intervals_where_eq(&Kleene::False),
                             )
                         })
-                        .reduce(|acc, e| acc.intersect(&e))
-                        .unwrap_or_default();
-                    extract_rec(f, knowledge, &others_cannot_hold)
+                        .reduce(|acc: IntervalSet<T>, e| acc.intersect(&e))
+                        .unwrap_or_else(|| Interval::unbounded(T::zero()).into());
+
+                    // At least one formula in the subset must hold, where the rest cannot hold
+                    let subset_holds_in = holds_in.intersect(&rest_cannot_hold);
+
+                    // Find the necessary intervals for each formula in the subset
+                    // We obtain the necessary intervals for the subset by forming the intersecting,
+                    // since at least one formula in the subset must hold
+                    subset
+                        .iter()
+                        .map(|f| extract_rec(f, knowledge, &subset_holds_in))
+                        .reduce(NecessaryIntervals::intersect)
+                        .unwrap_or_default()
                 })
                 .reduce(NecessaryIntervals::union)
-                .unwrap_or_default();
-            let from_all = subs
-                .iter()
-                .map(|f| extract_rec(f, knowledge, holds_in))
-                .reduce(NecessaryIntervals::intersect)
-                .unwrap_or_default();
-            from_cannot.union(from_all)
+                .unwrap_or_default()
         }
         _ => todo!(),
     }
@@ -128,8 +139,6 @@ impl<K: Eq + std::hash::Hash + Clone, V: Default> Merge<V> for HashMap<K, V> {
 #[cfg(test)]
 mod tests {
     use std::rc::Rc;
-
-    use itertools::Itertools;
 
     use crate::{
         monitoring::kleene::KleeneMonitorSignal, parser::mltl_parser, sets::interval::Interval,
@@ -177,11 +186,5 @@ mod tests {
             ),
         ]);
         assert_eq!(intervals, expected);
-    }
-
-    #[test]
-    fn test_ps() {
-        let f = [NNFFormula::<u32>::True, NNFFormula::False];
-        let v = f.iter().powerset().collect_vec();
     }
 }
