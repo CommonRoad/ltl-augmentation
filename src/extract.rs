@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
+    rc::Rc,
 };
 
 use itertools::Itertools;
@@ -8,12 +9,13 @@ use num::{traits::SaturatingSub, Integer, Unsigned};
 
 use crate::{
     formula::{AtomicProposition, NNFFormula},
-    monitoring::monitor::Monitor,
+    monitoring::{kleene::KleeneMonitorSignal, monitor::Monitor},
     sets::{interval::Interval, interval_set::IntervalSet},
     signals::truth_values::Kleene,
+    trace::Trace,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct NecessaryIntervals<T>(HashMap<AtomicProposition, IntervalSet<T>>);
 
 impl<T> Default for NecessaryIntervals<T> {
@@ -38,81 +40,116 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> NecessaryIntervals<T> {
     }
 }
 
-pub fn extract<T>(
-    knowledge: &Monitor<T, Kleene>,
-    holds_in: &IntervalSet<T>,
-) -> HashMap<AtomicProposition, IntervalSet<T>>
-where
-    T: Integer + Unsigned + Copy + Hash + SaturatingSub,
-{
-    extract_rec(knowledge.root(), knowledge, holds_in).0
+type ExtractionCache<'a, T> =
+    HashMap<(&'a NNFFormula<T>, Rc<IntervalSet<T>>), NecessaryIntervals<T>>;
+pub struct NecessaryIntervalExtractor<'a, T> {
+    formula: &'a NNFFormula<T>,
+    knowledge: Monitor<'a, T, Kleene>,
+    cache: ExtractionCache<'a, T>,
 }
 
-fn extract_rec<T>(
-    formula: &NNFFormula<T>,
-    knowledge: &Monitor<T, Kleene>,
-    holds_in: &IntervalSet<T>,
-) -> NecessaryIntervals<T>
-where
-    T: Integer + Unsigned + Copy + Hash + SaturatingSub,
+impl<'a, T: Integer + Unsigned + Copy + Hash + SaturatingSub + std::fmt::Debug>
+    NecessaryIntervalExtractor<'a, T>
 {
-    match formula {
-        NNFFormula::True => NecessaryIntervals::default(),
-        NNFFormula::False => NecessaryIntervals(
-            formula
-                .collect_aps()
-                .into_iter()
-                .map(|ap| (ap, holds_in.clone()))
-                .collect(),
-        ),
-        NNFFormula::AP(ap) => {
-            NecessaryIntervals(HashMap::from_iter([(ap.clone(), holds_in.clone())]))
+    pub fn new(formula: &'a NNFFormula<T>, trace: &Trace<T, Kleene>) -> Self {
+        let knowledge = Monitor::new::<KleeneMonitorSignal<_>>(formula, trace);
+        NecessaryIntervalExtractor {
+            formula,
+            knowledge,
+            cache: HashMap::new(),
         }
-        NNFFormula::And(subs) => subs
-            .iter()
-            .map(|f| extract_rec(f, knowledge, holds_in))
-            .reduce(NecessaryIntervals::union)
-            .unwrap_or_default(),
-        NNFFormula::Or(subs) => {
-            // Look at all subsets (and their complements) of the disjunction subformulas
-            let subsets_with_rests = subs.iter().powerset().map(|set| {
-                let rest = subs.iter().filter(|f| !set.contains(f)).collect_vec();
-                (set, rest)
-            });
+    }
 
-            subsets_with_rests
-                .map(|(subset, rest)| {
-                    // For each subset, find the intervals where its complement cannot hold
-                    let rest_cannot_hold = rest
-                        .iter()
-                        .map(|f| {
-                            IntervalSet::from_iter(
-                                knowledge
-                                    .satisfaction_signals()
-                                    .get(f)
-                                    .expect("knowledge should contain all subformulas")
-                                    .intervals_where_eq(&Kleene::False),
-                            )
-                        })
-                        .reduce(|acc: IntervalSet<T>, e| acc.intersect(&e))
-                        .unwrap_or_else(|| Interval::unbounded(T::zero()).into());
+    pub fn extract(
+        &mut self,
+        holds_in: IntervalSet<T>,
+    ) -> HashMap<AtomicProposition, IntervalSet<T>> {
+        self.extract_rec(self.formula, &Rc::new(holds_in)).0
+    }
 
-                    // At least one formula in the subset must hold, where the rest cannot hold
-                    let subset_holds_in = holds_in.intersect(&rest_cannot_hold);
+    fn extract_rec(
+        &mut self,
+        formula: &'a NNFFormula<T>,
+        holds_in: &Rc<IntervalSet<T>>,
+    ) -> NecessaryIntervals<T> {
+        // Check the cache for the current parameters
+        let key = (formula, Rc::clone(holds_in));
+        if self.cache.contains_key(&key) {
+            println!("Cache hit: {:?}", key);
+            return self.cache.get(&key).unwrap().clone();
+        }
 
-                    // Find the necessary intervals for each formula in the subset
-                    // We obtain the necessary intervals for the subset by forming the intersecting,
-                    // since at least one formula in the subset must hold
-                    subset
-                        .iter()
-                        .map(|f| extract_rec(f, knowledge, &subset_holds_in))
-                        .reduce(NecessaryIntervals::intersect)
-                        .unwrap_or_default()
-                })
+        let result = match formula {
+            NNFFormula::True => NecessaryIntervals::default(),
+            NNFFormula::False => NecessaryIntervals(
+                formula
+                    .collect_aps()
+                    .into_iter()
+                    .map(|ap| (ap, holds_in.as_ref().clone()))
+                    .collect(),
+            ),
+            NNFFormula::AP(ap) => NecessaryIntervals(HashMap::from_iter([(
+                ap.clone(),
+                holds_in.as_ref().clone(),
+            )])),
+            NNFFormula::And(subs) => subs
+                .iter()
+                .map(|f| self.extract_rec(f, holds_in))
                 .reduce(NecessaryIntervals::union)
-                .unwrap_or_default()
-        }
-        _ => todo!(),
+                .unwrap_or_default(),
+            NNFFormula::Or(subs) => {
+                // Look at all subsets (and their complements) of the disjunction subformulas
+                let subsets_with_rests = subs.iter().powerset().map(|set| {
+                    let rest = subs.iter().filter(|f| !set.contains(f)).collect_vec();
+                    (set, rest)
+                });
+
+                subsets_with_rests
+                    .filter_map(|(subset, rest)| {
+                        if subset.is_empty() {
+                            return None;
+                        }
+
+                        // For each subset, find the intervals where its complement cannot hold
+                        let rest_cannot_hold = rest
+                            .iter()
+                            .map(|f| {
+                                IntervalSet::from_iter(
+                                    self.knowledge
+                                        .satisfaction_signals()
+                                        .get(f)
+                                        .expect("knowledge should contain all subformulas")
+                                        .intervals_where_eq(&Kleene::False),
+                                )
+                            })
+                            .reduce(|acc: IntervalSet<T>, e| acc.intersect(&e))
+                            .unwrap_or_else(|| Interval::unbounded(T::zero()).into());
+
+                        // At least one formula in the subset must hold, where the rest cannot hold
+                        let subset_holds_in = Rc::new(holds_in.intersect(&rest_cannot_hold));
+
+                        // If the subset does not have to hold anywhere, we won't get any new information
+                        if subset_holds_in.is_empty() {
+                            return None;
+                        }
+
+                        // Find the necessary intervals for each formula in the subset
+                        // We obtain the necessary intervals for the subset by forming the intersecting,
+                        // since at least one formula in the subset must hold
+                        subset
+                            .iter()
+                            .map(|f| self.extract_rec(f, &subset_holds_in))
+                            .reduce(NecessaryIntervals::intersect)
+                    })
+                    .reduce(NecessaryIntervals::union)
+                    .unwrap_or_default()
+            }
+            _ => todo!(),
+        };
+
+        // Update cache
+        self.cache.insert(key, result.clone());
+        result
     }
 }
 
@@ -140,10 +177,7 @@ impl<K: Eq + std::hash::Hash + Clone, V: Default> Merge<V> for HashMap<K, V> {
 mod tests {
     use std::rc::Rc;
 
-    use crate::{
-        monitoring::kleene::KleeneMonitorSignal, parser::mltl_parser, sets::interval::Interval,
-        signals::signal::Signal, trace::Trace,
-    };
+    use crate::{parser::mltl_parser, sets::interval::Interval, signals::signal::Signal};
 
     use super::*;
 
@@ -160,8 +194,8 @@ mod tests {
             ("b", b_signal),
             ("c", c_signal),
         ]));
-        let monitor = Monitor::new::<KleeneMonitorSignal<_>>(&phi, &trace);
-        let intervals = extract(&monitor, &Interval::bounded(0, 2).into());
+        let intervals =
+            NecessaryIntervalExtractor::new(&phi, &trace).extract(Interval::bounded(0, 2).into());
         let expected = HashMap::from([
             (
                 AtomicProposition {

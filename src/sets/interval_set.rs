@@ -4,7 +4,7 @@ use num::{traits::SaturatingSub, Integer, Unsigned};
 
 use crate::{sets::interval::Interval, signals::signal::Signal};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IntervalSet<T> {
     included: Signal<T, bool>,
 }
