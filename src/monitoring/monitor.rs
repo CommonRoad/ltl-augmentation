@@ -6,6 +6,7 @@ use num::{traits::SaturatingSub, Integer, Unsigned};
 use crate::{
     formula::NNFFormula,
     signals::{signal::Signal, truth_values::TruthValue},
+    trace::Trace,
 };
 
 use super::Logical;
@@ -28,14 +29,14 @@ impl<'a, T, V> Monitor<'a, T, V> {
 impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash, V: TruthValue + Eq + Clone>
     Monitor<'a, T, V>
 {
-    pub fn new<L>(formula: &'a NNFFormula<T>, trace: &HashMap<&str, Signal<T, V>>) -> Self
+    pub fn new<L>(formula: &'a NNFFormula<T>, trace: &Trace<T, V>) -> Self
     where
         L: Logical<T> + From<Signal<T, V>> + Into<Signal<T, V>>,
     {
         let atomic_propositions = formula.collect_aps();
         let missing_propositions = atomic_propositions
             .iter()
-            .filter(|ap| !trace.contains_key(ap.name.as_ref()))
+            .filter(|ap| trace.get_ap_signal(ap.name.as_ref()).is_none())
             .collect_vec();
         if !missing_propositions.is_empty() {
             panic!(
@@ -57,7 +58,7 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash, V: TruthValue + Eq
 
     fn compute_satisfaction_signals<L>(
         formula: &'a NNFFormula<T>,
-        trace: &HashMap<&str, Signal<T, V>>,
+        trace: &Trace<T, V>,
         logicals: &mut HashMap<&'a NNFFormula<T>, L>,
     ) where
         L: Logical<T> + From<Signal<T, V>> + Into<Signal<T, V>>,
@@ -69,7 +70,7 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash, V: TruthValue + Eq
             NNFFormula::True => Signal::uniform(V::top()).into(),
             NNFFormula::False => Signal::uniform(V::bot()).into(),
             NNFFormula::AP(ap) => {
-                let signal = trace.get(ap.name.as_ref()).unwrap();
+                let signal = trace.get_ap_signal(ap.name.as_ref()).unwrap();
                 if ap.negated {
                     L::from(signal.clone()).negation()
                 } else {
@@ -131,7 +132,11 @@ mod tests {
         let a_signal = BooleanSignal::from_positive_intervals([Interval::bounded(2_u32, 4)]);
         let b_signal = BooleanSignal::from_positive_intervals([Interval::bounded(5, 7)]);
         let c_signal = BooleanSignal::from_positive_intervals([Interval::bounded(10, 12)]);
-        let trace = HashMap::from_iter([("a", a_signal), ("b", b_signal), ("c", c_signal)]);
+        let trace = Trace::from(HashMap::from_iter([
+            ("a", a_signal),
+            ("b", b_signal),
+            ("c", c_signal),
+        ]));
 
         let monitor = Monitor::new::<BooleanMonitorSignal<_>>(&phi, &trace);
 
@@ -164,7 +169,11 @@ mod tests {
             Signal::indicator(&Interval::bounded(2_u32, 4), Kleene::True, Kleene::Unknown);
         let b_signal = Signal::indicator(&Interval::bounded(5, 7), Kleene::True, Kleene::False);
         let c_signal = Signal::indicator(&Interval::bounded(10, 12), Kleene::True, Kleene::Unknown);
-        let trace = HashMap::from_iter([("a", a_signal), ("b", b_signal), ("c", c_signal)]);
+        let trace = Trace::from(HashMap::from_iter([
+            ("a", a_signal),
+            ("b", b_signal),
+            ("c", c_signal),
+        ]));
 
         let monitor = Monitor::new::<KleeneMonitorSignal<_>>(&phi, &trace);
 
