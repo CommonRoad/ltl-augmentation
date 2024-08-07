@@ -144,7 +144,17 @@ impl<'a, T: Integer + Unsigned + Copy + Hash + SaturatingSub + std::fmt::Debug>
                     .reduce(NecessaryIntervals::union)
                     .unwrap_or_default()
             }
-            _ => todo!(),
+            NNFFormula::Until(lhs, int @ Interval::Bounded { lb, ub }, rhs)
+                if **lhs == NNFFormula::True && lb == ub =>
+            {
+                let rhs_holds_in = Rc::new(holds_in.minkowski_sum(int));
+                self.extract_rec(rhs, &rhs_holds_in)
+            }
+            NNFFormula::Release(lhs, int, rhs) if **lhs == NNFFormula::False => {
+                let rhs_holds_in = Rc::new(holds_in.minkowski_sum(int));
+                self.extract_rec(rhs, &rhs_holds_in)
+            }
+            _ => NecessaryIntervals::default(),
         };
 
         // Update cache
@@ -220,5 +230,41 @@ mod tests {
             ),
         ]);
         assert_eq!(intervals, expected);
+    }
+
+    #[test]
+    fn test_ri5() {
+        let ri5: NNFFormula<_> = mltl_parser::formula(include_str!("../ri5.txt"))
+            .expect("Syntax is correct")
+            .into();
+        let aps = ri5.collect_aps();
+        let trace = Trace::from(
+            aps.into_iter()
+                .map(|ap| (ap.name, Signal::uniform(Kleene::Unknown)))
+                .collect(),
+        );
+        dbg!(&ri5);
+        let mut extractor = NecessaryIntervalExtractor::new(&ri5, &trace);
+        let intervals = extractor.extract(Interval::singleton(0).into());
+        dbg!(extractor.knowledge.satisfaction_signals().values());
+        dbg!(&intervals);
+    }
+
+    #[test]
+    fn test_rg1() {
+        let rg1: NNFFormula<_> = mltl_parser::formula(include_str!("../rg1.txt"))
+            .expect("Syntax is correct")
+            .into();
+        let aps = rg1.collect_aps();
+        let trace = Trace::from(
+            aps.into_iter()
+                .map(|ap| (ap.name, Signal::uniform(Kleene::Unknown)))
+                .collect(),
+        );
+        dbg!(&rg1);
+        let mut extractor = NecessaryIntervalExtractor::new(&rg1, &trace);
+        let intervals = extractor.extract(Interval::singleton(0).into());
+        dbg!(extractor.knowledge.satisfaction_signals().values());
+        dbg!(&intervals);
     }
 }
