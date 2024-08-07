@@ -14,6 +14,7 @@ peg::parser! {
                 --
                 int:finally_operator() __ sub:@ { Formula::finally(int, sub) }
                 int:globally_operator() __ sub:@ { Formula::globally(int, sub) }
+                int:next_operator() __ sub:@ { Formula::globally(int, sub) }
                 --
                 lhs:@ _ implies_operator() _ rhs:(@) { Formula::implies(lhs, rhs) }
                 --
@@ -23,13 +24,22 @@ peg::parser! {
                 --
                 not_operator() _ sub:@ { Formula::negated(sub) }
                 --
-                ap:atomic_proposition() { Formula::AP(ap) }
+                atom:atomic_formula() { atom }
                 --
                 "(" f:formula() ")" { f }
             }
 
-        rule atomic_proposition() -> AtomicProposition
-            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '_']+) { AtomicProposition { name: Rc::from(name), negated: false } }
+        rule atomic_formula() -> Formula<u32>
+            = f:(true_formula() / false_formula() / atomic_proposition()) { f }
+
+        rule true_formula() -> Formula<u32>
+            = ("True" / "true") { Formula::True }
+
+        rule false_formula() -> Formula<u32>
+            = ("False" / "false") { Formula::False }
+
+        rule atomic_proposition() -> Formula<u32>
+            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '_']+) { Formula::AP(AtomicProposition { name: Rc::from(name), negated: false }) }
 
         rule not_operator() = "!"
 
@@ -47,8 +57,10 @@ peg::parser! {
 
         rule globally_operator() -> Interval<u32> = "G" i:interval()? { i.unwrap_or_else(|| Interval::unbounded(0)) }
 
+        rule next_operator() -> Interval<u32> = "X" i:singleton_interval()? { i.unwrap_or_else(|| Interval::singleton(1)) }
+
         rule interval() -> Interval<u32>
-            = unbounded_interval() / bounded_interval() / expected!("Bounded or unbounded interval")
+            = unbounded_interval() / bounded_interval() / singleton_interval() / expected!("Bounded, unbounded, or singleton interval")
 
         rule bounded_interval() -> Interval<u32>
             = "[" lb:number() _ "," _ ub:number() "]" {?
@@ -61,6 +73,9 @@ peg::parser! {
 
         rule unbounded_interval() -> Interval<u32>
             = "[" lb:number() _ "," _ ("*" / "inf") "]" { Interval::unbounded(lb) }
+
+        rule singleton_interval() -> Interval<u32>
+            = "[" x:number() "]" { Interval::singleton(x) }
 
         rule number() -> u32
             = n:$(['0'..='9']+) {? n.parse().or(Err("u32")) }
