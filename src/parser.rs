@@ -29,7 +29,7 @@ peg::parser! {
             }
 
         rule atomic_proposition() -> AtomicProposition
-            = name:$(['a'..='z'] ['a'..='z' | 'A'..='Z' | '0'..='9']*) { AtomicProposition { name: Rc::from(name), negated: false } }
+            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '_']+) { AtomicProposition { name: Rc::from(name), negated: false } }
 
         rule not_operator() = "!"
 
@@ -39,13 +39,13 @@ peg::parser! {
 
         rule implies_operator() = "->"
 
-        rule until_operator() -> Interval<u32> = "U" i:interval() { i }
+        rule until_operator() -> Interval<u32> = "U" i:interval()? { i.unwrap_or_else(|| Interval::unbounded(0)) }
 
-        rule release_operator() -> Interval<u32> = "R" i:interval() { i }
+        rule release_operator() -> Interval<u32> = "R" i:interval()? { i.unwrap_or_else(|| Interval::unbounded(0)) }
 
-        rule finally_operator() -> Interval<u32> = "F" i:interval() { i }
+        rule finally_operator() -> Interval<u32> = "F" i:interval()? { i.unwrap_or_else(|| Interval::unbounded(0)) }
 
-        rule globally_operator() -> Interval<u32> = "G" i:interval() { i }
+        rule globally_operator() -> Interval<u32> = "G" i:interval()? { i.unwrap_or_else(|| Interval::unbounded(0)) }
 
         rule interval() -> Interval<u32>
             = unbounded_interval() / bounded_interval() / expected!("Bounded or unbounded interval")
@@ -60,7 +60,7 @@ peg::parser! {
             }
 
         rule unbounded_interval() -> Interval<u32>
-            = "[" lb:number() _ "," _ "*" "]" { Interval::unbounded(lb) }
+            = "[" lb:number() _ "," _ ("*" / "inf") "]" { Interval::unbounded(lb) }
 
         rule number() -> u32
             = n:$(['0'..='9']+) {? n.parse().or(Err("u32")) }
