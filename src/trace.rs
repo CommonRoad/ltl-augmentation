@@ -1,11 +1,12 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use crate::signals::signal::Signal;
 
-pub struct Trace<'a, T, V>(HashMap<&'a str, Signal<T, V>>);
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Trace<T, V>(HashMap<Rc<str>, Signal<T, V>>);
 
-impl<'a, T, V> Trace<'a, T, V> {
-    pub fn from(signals: HashMap<&'a str, Signal<T, V>>) -> Self {
+impl<T, V> Trace<T, V> {
+    pub fn from(signals: HashMap<Rc<str>, Signal<T, V>>) -> Self {
         Trace(signals)
     }
 

@@ -109,6 +109,8 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash, V: TruthValue + Eq
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use rstest::*;
 
     use crate::{
@@ -133,9 +135,9 @@ mod tests {
         let b_signal = BooleanSignal::from_positive_intervals([Interval::bounded(5, 7)]);
         let c_signal = BooleanSignal::from_positive_intervals([Interval::bounded(10, 12)]);
         let trace = Trace::from(HashMap::from_iter([
-            ("a", a_signal),
-            ("b", b_signal),
-            ("c", c_signal),
+            (Rc::from("a"), a_signal),
+            (Rc::from("b"), b_signal),
+            (Rc::from("c"), c_signal),
         ]));
 
         let monitor = Monitor::new::<BooleanMonitorSignal<_>>(&phi, &trace);
@@ -170,9 +172,9 @@ mod tests {
         let b_signal = Signal::indicator(&Interval::bounded(5, 7), Kleene::True, Kleene::False);
         let c_signal = Signal::indicator(&Interval::bounded(10, 12), Kleene::True, Kleene::Unknown);
         let trace = Trace::from(HashMap::from_iter([
-            ("a", a_signal),
-            ("b", b_signal),
-            ("c", c_signal),
+            (Rc::from("a"), a_signal),
+            (Rc::from("b"), b_signal),
+            (Rc::from("c"), c_signal),
         ]));
 
         let monitor = Monitor::new::<KleeneMonitorSignal<_>>(&phi, &trace);

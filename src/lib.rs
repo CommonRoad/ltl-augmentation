@@ -8,3 +8,4 @@ pub mod rewrite;
 pub mod sets;
 pub mod signals;
 pub mod trace;
+pub mod trace_parser;

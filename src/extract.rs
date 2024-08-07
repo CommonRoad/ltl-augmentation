@@ -190,9 +190,9 @@ mod tests {
         let b_signal = Signal::indicator(&Interval::singleton(1), Kleene::False, Kleene::Unknown);
         let c_signal = Signal::indicator(&Interval::singleton(2), Kleene::False, Kleene::Unknown);
         let trace = Trace::from(HashMap::from_iter([
-            ("a", a_signal),
-            ("b", b_signal),
-            ("c", c_signal),
+            (Rc::from("a"), a_signal),
+            (Rc::from("b"), b_signal),
+            (Rc::from("c"), c_signal),
         ]));
         let intervals =
             NecessaryIntervalExtractor::new(&phi, &trace).extract(Interval::bounded(0, 2).into());
