@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     hash::Hash,
     rc::Rc,
 };
@@ -81,85 +81,133 @@ impl<'a, T: Integer + Unsigned + Copy + Hash + SaturatingSub + std::fmt::Debug>
 
         let result = match formula {
             NNFFormula::True => NecessaryIntervals::default(),
-            NNFFormula::False => NecessaryIntervals(
-                formula
-                    .collect_aps()
-                    .into_iter()
-                    .map(|ap| (ap, holds_in.as_ref().clone()))
-                    .collect(),
-            ),
-            NNFFormula::AP(ap) => NecessaryIntervals(HashMap::from_iter([(
-                ap.clone(),
-                holds_in.as_ref().clone(),
-            )])),
-            NNFFormula::And(subs) => subs
-                .iter()
-                .map(|f| self.extract_rec(f, holds_in))
-                .reduce(NecessaryIntervals::union)
-                .unwrap_or_default(),
-            NNFFormula::Or(subs) => {
-                // Look at all subsets (and their complements) of the disjunction subformulas
-                let subsets_with_rests = subs.iter().powerset().map(|set| {
-                    let rest = subs.iter().filter(|f| !set.contains(f)).collect_vec();
-                    (set, rest)
-                });
-
-                subsets_with_rests
-                    .filter_map(|(subset, rest)| {
-                        if subset.is_empty() {
-                            return None;
-                        }
-
-                        // For each subset, find the intervals where its complement cannot hold
-                        let rest_cannot_hold = rest
-                            .iter()
-                            .map(|f| {
-                                IntervalSet::from_iter(
-                                    self.knowledge
-                                        .satisfaction_signals()
-                                        .get(f)
-                                        .expect("knowledge should contain all subformulas")
-                                        .intervals_where_eq(&Kleene::False),
-                                )
-                            })
-                            .reduce(|acc: IntervalSet<T>, e| acc.intersect(&e))
-                            .unwrap_or_else(|| Interval::unbounded(T::zero()).into());
-
-                        // At least one formula in the subset must hold, where the rest cannot hold
-                        let subset_holds_in = Rc::new(holds_in.intersect(&rest_cannot_hold));
-
-                        // If the subset does not have to hold anywhere, we won't get any new information
-                        if subset_holds_in.is_empty() {
-                            return None;
-                        }
-
-                        // Find the necessary intervals for each formula in the subset
-                        // We obtain the necessary intervals for the subset by forming the intersecting,
-                        // since at least one formula in the subset must hold
-                        subset
-                            .iter()
-                            .map(|f| self.extract_rec(f, &subset_holds_in))
-                            .reduce(NecessaryIntervals::intersect)
-                    })
-                    .reduce(NecessaryIntervals::union)
-                    .unwrap_or_default()
-            }
-            NNFFormula::Until(lhs, int @ Interval::Bounded { lb, ub }, rhs)
-                if **lhs == NNFFormula::True && lb == ub =>
-            {
-                let rhs_holds_in = Rc::new(holds_in.minkowski_sum(int));
-                self.extract_rec(rhs, &rhs_holds_in)
+            NNFFormula::False => self.extract_false(holds_in),
+            NNFFormula::AP(ap) => self.extract_ap(ap, holds_in),
+            NNFFormula::And(subs) => self.extract_and(subs, holds_in),
+            NNFFormula::Or(subs) => self.extract_or(subs, holds_in),
+            NNFFormula::Until(lhs, int, rhs) if **lhs == NNFFormula::True => {
+                self.extract_finally(rhs, int, holds_in)
             }
             NNFFormula::Release(lhs, int, rhs) if **lhs == NNFFormula::False => {
-                let rhs_holds_in = Rc::new(holds_in.minkowski_sum(int));
-                self.extract_rec(rhs, &rhs_holds_in)
+                self.extract_globally(rhs, int, holds_in)
             }
-            _ => NecessaryIntervals::default(),
+            _ => {
+                dbg!(&formula);
+                todo!()
+            }
         };
 
         // Update cache
         self.cache.insert(key, result.clone());
         result
+    }
+
+    fn extract_false(&self, holds_in: &Rc<IntervalSet<T>>) -> NecessaryIntervals<T> {
+        NecessaryIntervals(
+            self.formula
+                .collect_aps()
+                .into_iter()
+                .map(|ap| (ap, holds_in.as_ref().clone()))
+                .collect(),
+        )
+    }
+
+    fn extract_ap(
+        &self,
+        ap: &AtomicProposition,
+        holds_in: &Rc<IntervalSet<T>>,
+    ) -> NecessaryIntervals<T> {
+        NecessaryIntervals(HashMap::from_iter([(
+            ap.clone(),
+            holds_in.as_ref().clone(),
+        )]))
+    }
+
+    fn extract_and(
+        &mut self,
+        subs: &'a BTreeSet<NNFFormula<T>>,
+        holds_in: &Rc<IntervalSet<T>>,
+    ) -> NecessaryIntervals<T> {
+        subs.iter()
+            .map(|f| self.extract_rec(f, holds_in))
+            .reduce(NecessaryIntervals::union)
+            .unwrap_or_default()
+    }
+
+    fn extract_or(
+        &mut self,
+        subs: &'a BTreeSet<NNFFormula<T>>,
+        holds_in: &Rc<IntervalSet<T>>,
+    ) -> NecessaryIntervals<T> {
+        // Look at all subsets (and their complements) of the disjunction subformulas
+        let subsets_with_rests = subs.iter().powerset().map(|set| {
+            let rest = subs.iter().filter(|f| !set.contains(f)).collect_vec();
+            (set, rest)
+        });
+
+        subsets_with_rests
+            .filter_map(|(subset, rest)| {
+                if subset.is_empty() {
+                    return None;
+                }
+
+                // For each subset, find the intervals where its complement cannot hold
+                let rest_cannot_hold = rest
+                    .iter()
+                    .map(|f| {
+                        IntervalSet::from_iter(
+                            self.knowledge
+                                .satisfaction_signals()
+                                .get(f)
+                                .expect("knowledge should contain all subformulas")
+                                .intervals_where_eq(&Kleene::False),
+                        )
+                    })
+                    .reduce(|acc: IntervalSet<T>, e| acc.intersect(&e))
+                    .unwrap_or_else(|| Interval::unbounded(T::zero()).into());
+
+                // At least one formula in the subset must hold, where the rest cannot hold
+                let subset_holds_in = Rc::new(holds_in.intersect(&rest_cannot_hold));
+
+                // If the subset does not have to hold anywhere, we won't get any new information
+                if subset_holds_in.is_empty() {
+                    return None;
+                }
+
+                // Find the necessary intervals for each formula in the subset
+                // We obtain the necessary intervals for the subset by forming the intersecting,
+                // since at least one formula in the subset must hold
+                subset
+                    .iter()
+                    .map(|f| self.extract_rec(f, &subset_holds_in))
+                    .reduce(NecessaryIntervals::intersect)
+            })
+            .reduce(NecessaryIntervals::union)
+            .unwrap_or_default()
+    }
+
+    fn extract_finally(
+        &mut self,
+        sub: &'a NNFFormula<T>,
+        interval: &Interval<T>,
+        holds_in: &Rc<IntervalSet<T>>,
+    ) -> NecessaryIntervals<T> {
+        // Check whether the finally is actually just a next
+        if matches!(interval, Interval::Bounded { lb, ub } if lb == ub) {
+            self.extract_globally(sub, interval, holds_in)
+        } else {
+            NecessaryIntervals::default()
+        }
+    }
+
+    fn extract_globally(
+        &mut self,
+        sub: &'a NNFFormula<T>,
+        interval: &Interval<T>,
+        holds_in: &Rc<IntervalSet<T>>,
+    ) -> NecessaryIntervals<T> {
+        let sub_holds_in = Rc::new(holds_in.minkowski_sum(interval));
+        self.extract_rec(sub, &sub_holds_in)
     }
 }
 
