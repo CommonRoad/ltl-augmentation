@@ -37,8 +37,22 @@ impl<T: Integer + Unsigned + Copy, V: Eq> Signal<T, V> {
         self.values
             .range(..=time)
             .next_back()
-            .map(|(_, value)| value)
             .expect("Signal is never empty")
+            .1
+    }
+
+    pub fn constant_interval_at(&self, time: T) -> Interval<T> {
+        let lb = self
+            .values
+            .range(..=time)
+            .next_back()
+            .map(|(&time, _)| time)
+            .expect("Signal is never empty");
+        let ub = self.values.range(time..).next().map(|(&time, _)| time);
+        match ub {
+            Some(ub) => Interval::bounded(lb, ub - T::one()),
+            None => Interval::unbounded(lb),
+        }
     }
 
     pub fn set(&mut self, interval: &Interval<T>, value: V)

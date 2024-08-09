@@ -28,6 +28,18 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> IntervalSet<T> {
         self.included.set(interval, false);
     }
 
+    pub fn contains(&self, time: T) -> bool {
+        *self.included.at(time)
+    }
+
+    pub fn largest_contiguous_interval_with(&self, time: T) -> Interval<T> {
+        if self.contains(time) {
+            self.included.constant_interval_at(time)
+        } else {
+            Interval::empty()
+        }
+    }
+
     pub fn union(&self, other: &Self) -> Self {
         IntervalSet {
             included: self.included.combine(&other.included, |&i1, &i2| i1 || i2),
@@ -113,6 +125,8 @@ mod tests {
         let i0 = Interval::bounded(1, 1);
         is.add(&i0);
         assert_eq!(is.get_intervals(), vec![i0]);
+        assert!(is.contains(1));
+        assert!(!is.contains(2));
 
         let i1 = Interval::bounded(0, 10);
         is.add(&i1);
@@ -124,6 +138,7 @@ mod tests {
         let i2 = Interval::bounded(20, 30);
         is.add(&i2);
         assert_eq!(is.get_intervals(), vec![i1, i2]);
+        assert_eq!(is.largest_contiguous_interval_with(1), i1);
 
         is.add(&Interval::bounded(11, 19));
         assert_eq!(is.get_intervals(), vec![Interval::bounded(0, 30)]);

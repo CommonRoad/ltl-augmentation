@@ -131,10 +131,8 @@ impl<T: Ord> Default for Interval<T> {
     }
 }
 
-impl<T: Integer + Unsigned + Copy> std::ops::Add for Interval<T> {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self {
+impl<T: Integer + Unsigned + Copy> Interval<T> {
+    pub fn minkowski_sum(self, rhs: Self) -> Self {
         match (self, rhs) {
             (Interval::Empty, _) | (_, Interval::Empty) => Interval::empty(),
             (Interval::Bounded { lb: lb1, ub: ub1 }, Interval::Bounded { lb: lb2, ub: ub2 }) => {
@@ -147,12 +145,42 @@ impl<T: Integer + Unsigned + Copy> std::ops::Add for Interval<T> {
             }
         }
     }
-}
 
-impl<T: Integer + Unsigned + SaturatingSub + Copy> std::ops::Sub for Interval<T> {
-    type Output = Self;
+    pub fn minkowski_difference(self, rhs: Self) -> Self
+    where
+        T: SaturatingSub,
+    {
+        match (self, rhs) {
+            (Interval::Empty, _) => Interval::empty(),
+            (_, Interval::Empty) => Interval::unbounded(T::zero()),
+            (
+                Interval::Bounded {
+                    lb: lb_min,
+                    ub: ub_min,
+                },
+                Interval::Bounded {
+                    lb: lb_sub,
+                    ub: ub_sub,
+                },
+            ) => {
+                if ub_min >= ub_sub {
+                    Interval::bounded(lb_min.saturating_sub(&lb_sub), ub_min - ub_sub)
+                } else {
+                    Interval::empty()
+                }
+            }
+            (Interval::Bounded { .. }, Interval::Unbounded { .. }) => Interval::empty(),
+            (Interval::Unbounded { lb: lb_min }, Interval::Bounded { lb: lb_sub, .. })
+            | (Interval::Unbounded { lb: lb_min }, Interval::Unbounded { lb: lb_sub }) => {
+                Interval::unbounded(lb_min.saturating_sub(&lb_sub))
+            }
+        }
+    }
 
-    fn sub(self, rhs: Self) -> Self {
+    pub fn back_shift(self, rhs: Self) -> Self
+    where
+        T: SaturatingSub,
+    {
         match (self, rhs) {
             (Interval::Empty, _) | (_, Interval::Empty) => Interval::empty(),
             (
@@ -188,33 +216,19 @@ impl<T: Integer + Unsigned + SaturatingSub + Copy> std::ops::Sub for Interval<T>
     }
 }
 
-impl<T: Integer + Unsigned + Copy + SaturatingSub> Interval<T> {
-    pub fn minkowski_difference(self, rhs: Self) -> Self {
-        match (self, rhs) {
-            (Interval::Empty, _) => Interval::empty(),
-            (_, Interval::Empty) => Interval::unbounded(T::zero()),
-            (
-                Interval::Bounded {
-                    lb: lb_min,
-                    ub: ub_min,
-                },
-                Interval::Bounded {
-                    lb: lb_sub,
-                    ub: ub_sub,
-                },
-            ) => {
-                if ub_min >= ub_sub {
-                    Interval::bounded(lb_min.saturating_sub(&lb_sub), ub_min - ub_sub)
-                } else {
-                    Interval::empty()
-                }
-            }
-            (Interval::Bounded { .. }, Interval::Unbounded { .. }) => Interval::empty(),
-            (Interval::Unbounded { lb: lb_min }, Interval::Bounded { lb: lb_sub, .. })
-            | (Interval::Unbounded { lb: lb_min }, Interval::Unbounded { lb: lb_sub }) => {
-                Interval::unbounded(lb_min.saturating_sub(&lb_sub))
-            }
-        }
+impl<T: Integer + Unsigned + Copy> std::ops::Add for Interval<T> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        self.minkowski_sum(rhs)
+    }
+}
+
+impl<T: Integer + Unsigned + SaturatingSub + Copy> std::ops::Sub for Interval<T> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        self.back_shift(rhs)
     }
 }
 
