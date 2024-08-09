@@ -211,14 +211,23 @@ impl<'a, T: Integer + Unsigned + Copy + Hash + SaturatingSub + std::fmt::Debug>
     ) -> NecessaryIntervals<T> {
         match interval {
             Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => {
-                // TODO: Minkowski difference with holds_in to contract knowledge
                 let rhs_cannot = self.get_cannot(rhs);
-                // MLTL semantics, so lhs does not need to hold in [0, lb - 1]
-                let lhs_must = rhs_cannot
-                    .intersect(&interval.into())
-                    .largest_contiguous_interval_with(*lb);
-                let lhs_holds_in = Rc::new(holds_in.minkowski_sum(&lhs_must));
-                self.extract_rec(lhs, &lhs_holds_in)
+                holds_in
+                    .get_intervals()
+                    .iter()
+                    .map(|holds_in_interval| {
+                        // We want to contract the holds_in_interval to the point 0, so we need to do the same to the knowledge
+                        let contracted_rhs_cannot = rhs_cannot
+                            .minkowski_difference(holds_in_interval)
+                            .largest_contiguous_interval_with(*lb);
+                        // MLTL semantics, so lhs does not need to hold in [0, lb - 1]
+                        let lhs_must = contracted_rhs_cannot.intersect(interval);
+                        let lhs_holds_in =
+                            Rc::new(holds_in_interval.minkowski_sum(lhs_must).into());
+                        self.extract_rec(lhs, &lhs_holds_in)
+                    })
+                    .reduce(NecessaryIntervals::union)
+                    .unwrap_or_default()
             }
             // Until with empty interval is equivalent to false
             Interval::Empty => self.extract_false(holds_in),
@@ -234,17 +243,28 @@ impl<'a, T: Integer + Unsigned + Copy + Hash + SaturatingSub + std::fmt::Debug>
     ) -> NecessaryIntervals<T> {
         match interval {
             Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => {
-                // TODO: Minkowski difference with holds_in to contract knowledge
-                let lhs_cannot = self.get_cannot(lhs).largest_contiguous_interval_with(*lb);
-                // lhs must hold strictly before to trigger release so we can extend the interval by 1
-                let extended_lhs_cannot = match lhs_cannot {
-                    Interval::Empty => Interval::singleton(*lb),
-                    _ => lhs_cannot + Interval::bounded(T::zero(), T::one()),
-                };
-                // MLTL semantics, so release is not triggered when lhs hold in [0, lb - 1]
-                let rhs_must = extended_lhs_cannot.intersect(interval);
-                let rhs_holds_in = Rc::new(holds_in.minkowski_sum(&rhs_must));
-                self.extract_rec(rhs, &rhs_holds_in)
+                let lhs_cannot = self.get_cannot(lhs);
+                holds_in
+                    .get_intervals()
+                    .iter()
+                    .map(|holds_in_interval| {
+                        // We want to contract the holds_in_interval to the point 0, so we need to do the same to the knowledge
+                        let contracted_lhs_cannot = lhs_cannot
+                            .minkowski_difference(holds_in_interval)
+                            .largest_contiguous_interval_with(*lb);
+                        // lhs must hold strictly before to trigger release so we can extend the interval by 1
+                        let extended_lhs_cannot = match contracted_lhs_cannot {
+                            Interval::Empty => Interval::singleton(*lb),
+                            _ => contracted_lhs_cannot + Interval::bounded(T::zero(), T::one()),
+                        };
+                        // MLTL semantics, so release is not triggered when lhs hold in [0, lb - 1]
+                        let rhs_must = extended_lhs_cannot.intersect(interval);
+                        let rhs_holds_in =
+                            Rc::new(holds_in_interval.minkowski_sum(rhs_must).into());
+                        self.extract_rec(rhs, &rhs_holds_in)
+                    })
+                    .reduce(NecessaryIntervals::union)
+                    .unwrap_or_default()
             }
             // Release with empty interval is equivalent to true
             Interval::Empty => NecessaryIntervals::default(),

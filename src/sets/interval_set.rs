@@ -63,6 +63,17 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> IntervalSet<T> {
         }
     }
 
+    pub fn minkowski_difference(&self, interval: &Interval<T>) -> Self {
+        match interval {
+            Interval::Empty => IntervalSet::new(),
+            _ => self
+                .get_intervals()
+                .iter()
+                .map(|&i| i.minkowski_difference(*interval))
+                .collect(),
+        }
+    }
+
     pub fn back_shift(self, interval: &Interval<T>) -> Self {
         match interval {
             Interval::Empty => IntervalSet::new(),
