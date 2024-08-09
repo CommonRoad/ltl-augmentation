@@ -185,9 +185,7 @@ impl<K: Eq + std::hash::Hash + Clone, V: Default> Merge<V> for HashMap<K, V> {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
-    use crate::{parser::mltl_parser, sets::interval::Interval, signals::signal::Signal};
+    use crate::{parser::mltl_parser, signals::signal::Signal, trace_parser::trace_parser};
 
     use super::*;
 
@@ -237,16 +235,18 @@ mod tests {
         let ri5: NNFFormula<_> = mltl_parser::formula(include_str!("../ri5.txt"))
             .expect("Syntax is correct")
             .into();
-        let aps = ri5.collect_aps();
-        let trace = Trace::from(
-            aps.into_iter()
-                .map(|ap| (ap.name, Signal::uniform(Kleene::Unknown)))
-                .collect(),
-        );
-        dbg!(&ri5);
-        let mut extractor = NecessaryIntervalExtractor::new(&ri5, &trace);
-        let intervals = extractor.extract(Interval::singleton(0).into());
-        dbg!(extractor.knowledge.satisfaction_signals().values());
+        let ri5_naive: NNFFormula<_> = mltl_parser::formula(include_str!("../ri5_naive.txt"))
+            .expect("Syntax is correct")
+            .into();
+        // println!("{}", ri5);
+        let trace =
+            trace_parser::trace(include_str!("../trace_ri5.txt")).expect("Syntax is correct");
+        let now = std::time::Instant::now();
+        let mut extractor = NecessaryIntervalExtractor::new(&ri5_naive, &trace);
+        let mut intervals = extractor.extract(Interval::singleton(0).into());
+        println!("{:.2?}", now.elapsed());
+        intervals.retain(|_, i| !i.is_empty());
+        // dbg!(extractor.knowledge.satisfaction_signals().values());
         dbg!(&intervals);
     }
 
@@ -255,16 +255,18 @@ mod tests {
         let rg1: NNFFormula<_> = mltl_parser::formula(include_str!("../rg1.txt"))
             .expect("Syntax is correct")
             .into();
-        let aps = rg1.collect_aps();
-        let trace = Trace::from(
-            aps.into_iter()
-                .map(|ap| (ap.name, Signal::uniform(Kleene::Unknown)))
-                .collect(),
-        );
+        let rg1_naive: NNFFormula<_> = mltl_parser::formula(include_str!("../rg1_naive.txt"))
+            .expect("Syntax is correct")
+            .into();
+        let trace =
+            trace_parser::trace(include_str!("../trace_rg1.txt")).expect("Syntax is correct");
         dbg!(&rg1);
-        let mut extractor = NecessaryIntervalExtractor::new(&rg1, &trace);
-        let intervals = extractor.extract(Interval::singleton(0).into());
-        dbg!(extractor.knowledge.satisfaction_signals().values());
+        let mut extractor = NecessaryIntervalExtractor::new(&rg1_naive, &trace);
+        let mut intervals = extractor.extract(Interval::singleton(0).into());
+        intervals.retain(|_, i| !i.is_empty());
+        let mut sat_sigs = extractor.knowledge.satisfaction_signals().clone();
+        sat_sigs.retain(|_, sig| sig != &Signal::uniform(Kleene::Unknown));
+        dbg!(&sat_sigs);
         dbg!(&intervals);
     }
 }
