@@ -1,11 +1,13 @@
 use std::{
     collections::{BTreeSet, HashSet},
+    fmt::Display,
     hash::Hash,
     rc::Rc,
 };
 
 use itertools::Itertools;
 use num::{Integer, Unsigned};
+use termtree::Tree;
 
 use crate::sets::interval::Interval;
 
@@ -13,6 +15,16 @@ use crate::sets::interval::Interval;
 pub struct AtomicProposition {
     pub name: Rc<str>,
     pub negated: bool,
+}
+
+impl Display for AtomicProposition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.negated {
+            write!(f, "¬{}", self.name)
+        } else {
+            write!(f, "{}", self.name)
+        }
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -76,6 +88,45 @@ impl<T: Integer + Unsigned + Copy> Formula<T> {
 
     pub fn finally(int: Interval<T>, sub: Self) -> Self {
         Formula::Finally(int, Box::new(sub))
+    }
+}
+
+impl<T: Display> Formula<T> {
+    fn to_termtree(&self) -> Tree<String> {
+        match self {
+            Formula::AP(ap) => Tree::new(format!("{}", ap)),
+            Formula::True => Tree::new("⊤".to_string()),
+            Formula::False => Tree::new("⊥".to_string()),
+
+            Formula::Not(sub) => Tree::new("¬".to_string()).with_leaves([sub.to_termtree()]),
+            Formula::And(subs) => {
+                Tree::new("∧".to_string()).with_leaves(subs.iter().map(|f| f.to_termtree()))
+            }
+            Formula::Or(subs) => {
+                Tree::new("∨".to_string()).with_leaves(subs.iter().map(|f| f.to_termtree()))
+            }
+            Formula::Implies(lhs, rhs) => {
+                Tree::new("→".to_string()).with_leaves([lhs.to_termtree(), rhs.to_termtree()])
+            }
+            Formula::Until(lhs, int, rhs) => {
+                Tree::new(format!("U{}", int)).with_leaves([lhs.to_termtree(), rhs.to_termtree()])
+            }
+            Formula::Release(lhs, int, rhs) => {
+                Tree::new(format!("R{}", int)).with_leaves([lhs.to_termtree(), rhs.to_termtree()])
+            }
+            Formula::Globally(int, sub) => {
+                Tree::new(format!("G{}", int)).with_leaves([sub.to_termtree()])
+            }
+            Formula::Finally(int, sub) => {
+                Tree::new(format!("F{}", int)).with_leaves([sub.to_termtree()])
+            }
+        }
+    }
+}
+
+impl<T: Display> Display for Formula<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_termtree())
     }
 }
 
@@ -266,6 +317,73 @@ impl<T: Integer + Unsigned + Copy + Hash> From<Formula<T>> for NNFFormula<T> {
 impl<T: Integer + Unsigned + Copy + Hash> From<Box<Formula<T>>> for Box<NNFFormula<T>> {
     fn from(formula: Box<Formula<T>>) -> Self {
         Box::new(NNFFormula::from(*formula))
+    }
+}
+
+impl<T: Display + PartialEq> NNFFormula<T> {
+    fn to_termtree(&self) -> Tree<String> {
+        match self {
+            NNFFormula::AP(ap) => Tree::new(format!("{}", ap)),
+            NNFFormula::True => Tree::new("⊤".to_string()),
+            NNFFormula::False => Tree::new("⊥".to_string()),
+
+            NNFFormula::And(subs) => {
+                Tree::new("∧".to_string()).with_leaves(subs.iter().map(|f| f.to_termtree()))
+            }
+            NNFFormula::Or(subs) => {
+                Tree::new("∨".to_string()).with_leaves(subs.iter().map(|f| f.to_termtree()))
+            }
+            NNFFormula::Until(lhs, int, rhs) if **lhs == NNFFormula::True => {
+                let op = if matches!(int, Interval::Bounded { lb, ub } if lb == ub) {
+                    "X"
+                } else {
+                    "F"
+                };
+                Tree::new(format!("{}{}", op, int)).with_leaves([rhs.to_termtree()])
+            }
+            NNFFormula::Release(lhs, int, rhs) if **lhs == NNFFormula::False => {
+                let op = if matches!(int, Interval::Bounded { lb, ub } if lb == ub) {
+                    "X"
+                } else {
+                    "G"
+                };
+                Tree::new(format!("{}{}", op, int)).with_leaves([rhs.to_termtree()])
+            }
+            NNFFormula::Until(lhs, int, rhs) => {
+                Tree::new(format!("U{}", int)).with_leaves([lhs.to_termtree(), rhs.to_termtree()])
+            }
+            NNFFormula::Release(lhs, int, rhs) => {
+                Tree::new(format!("R{}", int)).with_leaves([lhs.to_termtree(), rhs.to_termtree()])
+            }
+        }
+    }
+}
+
+impl<T: Display + Integer + Unsigned + Copy> Display for NNFFormula<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_termtree())
+    }
+}
+
+impl<T: Integer + Unsigned + Copy> From<NNFFormula<T>> for Formula<T> {
+    fn from(formula: NNFFormula<T>) -> Self {
+        match formula {
+            NNFFormula::AP(ap) => Formula::AP(ap),
+            NNFFormula::True => Formula::True,
+            NNFFormula::False => Formula::False,
+
+            NNFFormula::And(subs) => Formula::and(subs.into_iter().map(|f| f.into())),
+            NNFFormula::Or(subs) => Formula::or(subs.into_iter().map(|f| f.into())),
+
+            NNFFormula::Until(lhs, int, rhs) => Formula::Until(lhs.into(), int, rhs.into()),
+            NNFFormula::Release(lhs, int, rhs) => Formula::Release(lhs.into(), int, rhs.into()),
+        }
+    }
+}
+
+impl<T: Integer + Unsigned + Copy> From<Box<NNFFormula<T>>> for Box<Formula<T>> {
+    fn from(formula: Box<NNFFormula<T>>) -> Self {
+        Box::new(Formula::from(*formula))
     }
 }
 
