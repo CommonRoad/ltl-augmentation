@@ -64,7 +64,9 @@ impl<'a, T: Integer + Unsigned + Copy + Hash + SaturatingSub + std::fmt::Debug>
         &mut self,
         holds_in: IntervalSet<T>,
     ) -> HashMap<AtomicProposition, IntervalSet<T>> {
-        self.extract_rec(self.formula, &Rc::new(holds_in)).0
+        let mut intervals = self.extract_rec(self.formula, &Rc::new(holds_in)).0;
+        intervals.retain(|_, i| !i.is_empty());
+        intervals
     }
 
     fn extract_rec(
@@ -389,6 +391,40 @@ mod tests {
         let mut sat_sigs = extractor.knowledge.satisfaction_signals().clone();
         sat_sigs.retain(|_, sig| sig != &Signal::uniform(Kleene::Unknown));
         dbg!(&sat_sigs);
+        dbg!(&intervals);
+    }
+
+    #[test]
+    fn test_iteration() {
+        let phi: NNFFormula<_> = mltl_parser::formula("(G[0, 5] a) & (G[0, 10] a -> b)")
+            .expect("Syntax is correct")
+            .into();
+        let mut trace = Trace::from(
+            phi.collect_aps()
+                .into_iter()
+                .map(|ap| (ap.name, Signal::uniform(Kleene::Unknown)))
+                .collect(),
+        );
+        let mut intervals = HashMap::new();
+        loop {
+            let mut extractor = NecessaryIntervalExtractor::new(&phi, &trace);
+            let new_intervals = extractor.extract(Interval::singleton(0).into());
+            dbg!(&new_intervals);
+            println!("========================================");
+            if new_intervals == intervals {
+                intervals = new_intervals;
+                break;
+            }
+            new_intervals.iter().for_each(|(ap, i)| {
+                if ap.negated {
+                    trace.set_ap(Rc::clone(&ap.name), i, Kleene::False);
+                } else {
+                    trace.set_ap(Rc::clone(&ap.name), i, Kleene::True);
+                }
+            });
+            intervals = new_intervals;
+        }
+        println!("Final===================================");
         dbg!(&intervals);
     }
 }
