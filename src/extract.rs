@@ -38,13 +38,66 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> NecessaryIntervals<T> {
         self.merge(other, |i1, i2| i1.intersect(&i2));
         self
     }
+
+    fn minkowski_sum_intersection(self, interval: &Interval<T>) -> Self {
+        NecessaryIntervals(
+            self.0
+                .into_iter()
+                .map(|(ap, i)| (ap, i.minkowski_sum_intersection(interval)))
+                .collect(),
+        )
+    }
+
+    fn minkowski_sum(self, interval: &Interval<T>) -> Self {
+        NecessaryIntervals(
+            self.0
+                .into_iter()
+                .map(|(ap, i)| (ap, i.minkowski_sum(interval)))
+                .collect(),
+        )
+    }
+}
+
+struct KnowledgeProvider<'a, T> {
+    knowledge: Monitor<'a, T, Kleene>,
+    contraction: Interval<T>,
+}
+
+impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> KnowledgeProvider<'a, T> {
+    fn new(formula: &'a NNFFormula<T>, trace: &Trace<T, Kleene>) -> Self {
+        let knowledge = Monitor::new::<KleeneMonitorSignal<_>>(formula, trace);
+        KnowledgeProvider {
+            knowledge,
+            contraction: Interval::singleton(T::zero()),
+        }
+    }
+
+    fn contract(&mut self, interval: &Interval<T>) {
+        self.contraction = self.contraction + *interval;
+    }
+
+    fn uncontract(&mut self, interval: &Interval<T>) {
+        self.contraction = self.contraction.minkowski_difference(*interval);
+    }
+
+    fn get_cannot(&self, formula: &'a NNFFormula<T>) -> Option<IntervalSet<T>> {
+        self.knowledge
+            .satisfaction_signals()
+            .get(formula)
+            .map(|sig| {
+                sig.intervals_where_eq(&Kleene::False)
+                    .into_iter()
+                    .map(|i| i.minkowski_difference(self.contraction))
+                    .collect()
+            })
+    }
 }
 
 type ExtractionCache<'a, T> =
     HashMap<(&'a NNFFormula<T>, Rc<IntervalSet<T>>), NecessaryIntervals<T>>;
 pub struct NecessaryIntervalExtractor<'a, T> {
     formula: &'a NNFFormula<T>,
-    knowledge: Monitor<'a, T, Kleene>,
+    knowledge_provider: KnowledgeProvider<'a, T>,
     cache: ExtractionCache<'a, T>,
 }
 
@@ -52,10 +105,10 @@ impl<'a, T: Integer + Unsigned + Copy + Hash + SaturatingSub + std::fmt::Debug>
     NecessaryIntervalExtractor<'a, T>
 {
     pub fn new(formula: &'a NNFFormula<T>, trace: &Trace<T, Kleene>) -> Self {
-        let knowledge = Monitor::new::<KleeneMonitorSignal<_>>(formula, trace);
+        let knowledge_provider = KnowledgeProvider::new(formula, trace);
         NecessaryIntervalExtractor {
             formula,
-            knowledge,
+            knowledge_provider,
             cache: HashMap::new(),
         }
     }
@@ -188,11 +241,30 @@ impl<'a, T: Integer + Unsigned + Copy + Hash + SaturatingSub + std::fmt::Debug>
     ) -> NecessaryIntervals<T> {
         // Check whether the finally is actually just a next
         if matches!(interval, Interval::Bounded { lb, ub } if lb == ub) {
-            self.extract_globally(sub, interval, holds_in)
-        } else {
-            // TODO: Improve by contracting knowledge
-            NecessaryIntervals::default()
+            return self.extract_globally(sub, interval, holds_in);
         }
+
+        holds_in
+            .get_intervals()
+            .iter()
+            .map(|holds_in_interval| {
+                // Analyze subformula as if it had to hold at 0 only
+                // For this we need to contract the knowledge
+                let shift = *interval + *holds_in_interval;
+                self.knowledge_provider.contract(&shift);
+                let necessary = self.extract_rec(
+                    sub,
+                    &Rc::from(IntervalSet::from(Interval::singleton(T::zero()))),
+                );
+                self.knowledge_provider.uncontract(&shift);
+
+                // We need to shift the necessary intervals back to the original 0 point
+                necessary
+                    .minkowski_sum_intersection(interval)
+                    .minkowski_sum(holds_in_interval)
+            })
+            .reduce(NecessaryIntervals::union)
+            .unwrap_or_default()
     }
 
     fn extract_globally(
@@ -277,13 +349,9 @@ impl<'a, T: Integer + Unsigned + Copy + Hash + SaturatingSub + std::fmt::Debug>
     }
 
     fn get_cannot(&self, formula: &NNFFormula<T>) -> IntervalSet<T> {
-        IntervalSet::from_iter(
-            self.knowledge
-                .satisfaction_signals()
-                .get(formula)
-                .expect("knowledge should contain all subformulas")
-                .intervals_where_eq(&Kleene::False),
-        )
+        self.knowledge_provider
+            .get_cannot(formula)
+            .expect("knowledge provider should contain knowledge for all subformulas")
     }
 }
 
@@ -388,7 +456,11 @@ mod tests {
         let mut extractor = NecessaryIntervalExtractor::new(&rg1_naive, &trace);
         let mut intervals = extractor.extract(Interval::singleton(0).into());
         intervals.retain(|_, i| !i.is_empty());
-        let mut sat_sigs = extractor.knowledge.satisfaction_signals().clone();
+        let mut sat_sigs = extractor
+            .knowledge_provider
+            .knowledge
+            .satisfaction_signals()
+            .clone();
         sat_sigs.retain(|_, sig| sig != &Signal::uniform(Kleene::Unknown));
         dbg!(&sat_sigs);
         dbg!(&intervals);
@@ -425,6 +497,22 @@ mod tests {
             intervals = new_intervals;
         }
         println!("Final===================================");
+        dbg!(&intervals);
+    }
+
+    #[test]
+    fn test_finally() {
+        let phi: NNFFormula<_> = mltl_parser::formula("F[0, 1] G[0, 4] a")
+            .expect("Syntax is correct")
+            .into();
+        let trace = Trace::from(
+            phi.collect_aps()
+                .into_iter()
+                .map(|ap| (ap.name, Signal::uniform(Kleene::Unknown)))
+                .collect(),
+        );
+        let mut extractor = NecessaryIntervalExtractor::new(&phi, &trace);
+        let intervals = extractor.extract(Interval::singleton(0).into());
         dbg!(&intervals);
     }
 }
