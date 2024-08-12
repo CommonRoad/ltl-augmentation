@@ -65,7 +65,7 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> IntervalSet<T> {
 
     pub fn minkowski_difference(&self, interval: &Interval<T>) -> Self {
         match interval {
-            Interval::Empty => IntervalSet::new(),
+            Interval::Empty => IntervalSet::from(Interval::unbounded(T::zero())),
             _ => self
                 .get_intervals()
                 .iter()
