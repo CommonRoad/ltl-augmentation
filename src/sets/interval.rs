@@ -214,6 +214,29 @@ impl<T: Integer + Unsigned + Copy> Interval<T> {
             }
         }
     }
+
+    // Determine Minkowski sum of self with every point of rhs and return the intersection of the results
+    pub fn minkowski_sum_intersection(self, rhs: Self) -> Self {
+        match (self, rhs) {
+            (Interval::Empty, _) => Interval::empty(),
+            (_, Interval::Empty) => Interval::unbounded(T::zero()),
+            (
+                Interval::Bounded {
+                    lb: lb_lhs,
+                    ub: ub_lhs,
+                },
+                Interval::Bounded {
+                    lb: lb_rhs,
+                    ub: ub_rhs,
+                },
+            ) => Interval::bounded(lb_lhs + ub_rhs, ub_lhs + lb_rhs),
+            (Interval::Bounded { .. }, Interval::Unbounded { .. })
+            | (Interval::Unbounded { .. }, Interval::Unbounded { .. }) => Interval::empty(),
+            (Interval::Unbounded { lb: lb_lhs }, Interval::Bounded { ub: ub_rhs, .. }) => {
+                Interval::unbounded(lb_lhs + ub_rhs)
+            }
+        }
+    }
 }
 
 impl<T: Integer + Unsigned + Copy> std::ops::Add for Interval<T> {

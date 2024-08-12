@@ -85,6 +85,17 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> IntervalSet<T> {
         }
     }
 
+    pub fn minkowski_sum_intersection(&self, interval: &Interval<T>) -> Self {
+        match interval {
+            Interval::Empty => IntervalSet::from(Interval::unbounded(T::zero())),
+            _ => self
+                .get_intervals()
+                .iter()
+                .map(|&i| i.minkowski_sum_intersection(*interval))
+                .collect(),
+        }
+    }
+
     pub fn get_intervals(&self) -> Vec<Interval<T>> {
         self.included.intervals_where_eq(&true)
     }
