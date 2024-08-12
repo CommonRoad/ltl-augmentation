@@ -188,6 +188,7 @@ impl<'a, T: Integer + Unsigned + Copy + Hash + SaturatingSub + std::fmt::Debug>
         if matches!(interval, Interval::Bounded { lb, ub } if lb == ub) {
             self.extract_globally(sub, interval, holds_in)
         } else {
+            // TODO: Improve by contracting knowledge
             NecessaryIntervals::default()
         }
     }
@@ -212,7 +213,7 @@ impl<'a, T: Integer + Unsigned + Copy + Hash + SaturatingSub + std::fmt::Debug>
         match interval {
             Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => {
                 let rhs_cannot = self.get_cannot(rhs);
-                holds_in
+                let necessary_from_lhs = holds_in
                     .get_intervals()
                     .iter()
                     .map(|holds_in_interval| {
@@ -227,7 +228,9 @@ impl<'a, T: Integer + Unsigned + Copy + Hash + SaturatingSub + std::fmt::Debug>
                         self.extract_rec(lhs, &lhs_holds_in)
                     })
                     .reduce(NecessaryIntervals::union)
-                    .unwrap_or_default()
+                    .unwrap_or_default();
+                let necessary_from_rhs = self.extract_finally(rhs, interval, holds_in);
+                necessary_from_lhs.union(necessary_from_rhs)
             }
             // Until with empty interval is equivalent to false
             Interval::Empty => self.extract_false(holds_in),
