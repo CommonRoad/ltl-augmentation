@@ -56,6 +56,23 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> NecessaryIntervals<T> {
                 .collect(),
         )
     }
+
+    fn is_consistent(&self) -> bool {
+        let aps = self.0.keys().map(|ap| Rc::clone(&ap.name)).collect_vec();
+        aps.iter()
+            .filter_map(|ap| {
+                let positive = self.0.get(&AtomicProposition {
+                    name: Rc::clone(ap),
+                    negated: false,
+                })?;
+                let negative = self.0.get(&AtomicProposition {
+                    name: Rc::clone(ap),
+                    negated: true,
+                })?;
+                Some(positive.intersect(negative).is_empty())
+            })
+            .all(|b| b)
+    }
 }
 
 struct KnowledgeProvider<'a, T> {
