@@ -219,6 +219,22 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub, V: Eq> Signal<T, V> {
     {
         self.clone().into_intervals()
     }
+
+    pub fn get_refined_intervals(&self, other: &Self) -> Vec<Interval<T>> {
+        self.values
+            .keys()
+            .merge(other.values.keys())
+            .dedup()
+            .copied()
+            .map(Some)
+            .chain(std::iter::once(None))
+            .tuple_windows()
+            .map(|(lb, ub)| match ub {
+                Some(ub) => Interval::bounded(lb.unwrap(), ub.saturating_sub(&T::one())),
+                None => Interval::unbounded(lb.unwrap()),
+            })
+            .collect()
+    }
 }
 
 impl<T: Integer + Unsigned + Copy, V: Default + Eq> Default for Signal<T, V> {
@@ -277,6 +293,33 @@ mod tests {
                 (Interval::bounded(5, 5), 25),
                 (Interval::bounded(6, 10), 65),
                 (Interval::unbounded(11), 5)
+            ]
+        )
+    }
+
+    #[test]
+    fn test_get_refined_intervals() {
+        let mut signal1 = Signal::uniform(0);
+        signal1.set(&Interval::bounded(1_u32, 2), 1);
+        signal1.set(&Interval::bounded(3, 4), 3);
+        signal1.set(&Interval::unbounded(5), 5);
+
+        let mut signal2 = Signal::uniform(0);
+        signal2.set(&Interval::singleton(1_u32), -1);
+        signal2.set(&Interval::bounded(2, 5), 20);
+        signal2.set(&Interval::bounded(6, 10), 60);
+
+        let refined_intervals = signal1.get_refined_intervals(&signal2);
+        assert_eq!(
+            refined_intervals,
+            vec![
+                Interval::singleton(0),
+                Interval::singleton(1),
+                Interval::singleton(2),
+                Interval::bounded(3, 4),
+                Interval::singleton(5),
+                Interval::bounded(6, 10),
+                Interval::unbounded(11)
             ]
         )
     }
