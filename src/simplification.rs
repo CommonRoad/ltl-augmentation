@@ -104,6 +104,24 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
             .insert(formula, simplification_signal);
     }
 
+    fn get_globally_simplification(
+        time: T,
+        globally_interval: &Interval<T>,
+        sub_simp: &FormulaSignal<T>,
+    ) -> NNFFormula<T> {
+        NNFFormula::and(
+            sub_simp
+                .get_intervals_in(globally_interval)
+                .into_iter()
+                .map(|interval| {
+                    NNFFormula::globally(
+                        interval - Interval::singleton(time),
+                        sub_simp.at(*interval.lb().unwrap()).clone(),
+                    )
+                }),
+        )
+    }
+
     fn get_until_simplification(
         unknown_interval: &Interval<T>,
         lhs_simp: &FormulaSignal<T>,
@@ -139,18 +157,67 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
                 let globally_interval = until_interval
                     .minkowski_sum(Interval::singleton(t))
                     .intersect(&Interval::bounded(T::zero(), x.saturating_sub(&T::one())));
-                let conjunction = NNFFormula::and(
-                    lhs_simp
-                        .get_intervals_in(&globally_interval)
-                        .into_iter()
-                        .map(|interval| {
-                            NNFFormula::globally(
-                                interval - Interval::singleton(t),
-                                lhs_simp.at(*interval.lb().unwrap()).clone(),
-                            )
-                        })
-                        .chain(std::iter::once(until)),
+                let conjunction = NNFFormula::and([
+                    Self::get_globally_simplification(t, &globally_interval, lhs_simp),
+                    until,
+                ]);
+                disjunction = NNFFormula::or([disjunction, conjunction]);
+            }
+            if t >= last_change {
+                let rest = Interval::unbounded(t).intersect(unknown_interval);
+                simp_signal.set(&rest, Some(disjunction));
+                break;
+            } else {
+                simp_signal.set(&Interval::singleton(t), Some(disjunction));
+                t.inc();
+            }
+        }
+        simp_signal
+    }
+
+    fn get_release_simplification(
+        unknown_interval: &Interval<T>,
+        lhs_simp: &FormulaSignal<T>,
+        release_interval: &Interval<T>,
+        rhs_simp: &FormulaSignal<T>,
+    ) -> Signal<T, Option<NNFFormula<T>>> {
+        let last_change = lhs_simp.last_change().max(rhs_simp.last_change());
+        let mut simp_signal = Signal::uniform(None);
+        if unknown_interval.is_empty() {
+            return simp_signal;
+        }
+        let mut t = *unknown_interval.lb().unwrap();
+        let ub = unknown_interval.ub();
+        while ub.map(|&ub| t <= ub).unwrap_or(true) {
+            let omega = *release_interval + Interval::singleton(t);
+            let splits = lhs_simp.get_refined_intervals_in(rhs_simp, &omega);
+            let mut disjunction = Self::get_globally_simplification(
+                t,
+                &release_interval.minkowski_sum(Interval::singleton(t)),
+                rhs_simp,
+            );
+            for split in splits {
+                let x = *split.lb().expect("split should not be empty");
+                let until = NNFFormula::until(
+                    rhs_simp.at(x).clone(),
+                    split - Interval::singleton(t),
+                    NNFFormula::and([lhs_simp.at(x).clone(), rhs_simp.at(x).clone()]),
                 );
+                if matches!(until, NNFFormula::False) {
+                    continue;
+                }
+                if x < T::one() {
+                    disjunction = NNFFormula::or([disjunction, until]);
+                    continue;
+                }
+                // [t + a, x - 1]
+                let globally_interval = release_interval
+                    .minkowski_sum(Interval::singleton(t))
+                    .intersect(&Interval::bounded(T::zero(), x.saturating_sub(&T::one())));
+                let conjunction = NNFFormula::and([
+                    Self::get_globally_simplification(t, &globally_interval, lhs_simp),
+                    until,
+                ]);
                 disjunction = NNFFormula::or([disjunction, conjunction]);
             }
             if t >= last_change {
@@ -214,6 +281,55 @@ mod tests {
             &unknown_interval,
             &lhs_simp,
             &until_interval,
+            &rhs_simp,
+        );
+        println!("{}", simp.at(0).as_ref().unwrap());
+        println!("{}", simp.at(1).as_ref().unwrap());
+    }
+
+    #[test]
+    fn test_release() {
+        let a = AtomicProposition {
+            name: Rc::from("a"),
+            negated: false,
+        };
+        let b = AtomicProposition {
+            name: Rc::from("b"),
+            negated: false,
+        };
+        let c = AtomicProposition {
+            name: Rc::from("c"),
+            negated: false,
+        };
+        let d = AtomicProposition {
+            name: Rc::from("d"),
+            negated: false,
+        };
+
+        let unknown_interval = Interval::bounded(0, 1);
+
+        let mut rhs_simp = Signal::indicator(
+            &Interval::bounded(0, 2),
+            NNFFormula::AP(a.clone()),
+            NNFFormula::False,
+        );
+        rhs_simp.set(&Interval::bounded(3, 5), NNFFormula::AP(b.clone()));
+        rhs_simp.set(&Interval::bounded(6, 10), NNFFormula::AP(c.clone()));
+
+        let mut lhs_simp = Signal::indicator(
+            &Interval::bounded(4, 7),
+            NNFFormula::AP(d.clone()),
+            NNFFormula::False,
+        );
+        lhs_simp.set(&Interval::bounded(9, 12), NNFFormula::AP(d.clone()));
+        lhs_simp.set(&Interval::unbounded(0), NNFFormula::False);
+
+        let release_interval = Interval::bounded(0, 5);
+
+        let simp = Simplifier::<u32>::get_release_simplification(
+            &unknown_interval,
+            &lhs_simp,
+            &release_interval,
             &rhs_simp,
         );
         println!("{}", simp.at(0).as_ref().unwrap());
