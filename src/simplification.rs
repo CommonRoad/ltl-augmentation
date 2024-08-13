@@ -64,6 +64,10 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
                 }
             }
             NNFFormula::Until(lhs, int, rhs) => {
+                let simp_sub_interval = *interval + *int;
+                self.simplify_rec(lhs, &simp_sub_interval);
+                self.simplify_rec(rhs, &simp_sub_interval);
+
                 let lhs_simp = self.simplification_signals.get(lhs.as_ref()).unwrap();
                 let rhs_simp = self.simplification_signals.get(rhs.as_ref()).unwrap();
 
@@ -96,9 +100,13 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
                                 simplification_signal.set(&i, f.unwrap());
                             })
                     });
-                todo!()
+                simplification_signal
             }
             NNFFormula::Release(lhs, int, rhs) => {
+                let simp_sub_interval = *interval + *int;
+                self.simplify_rec(lhs, &simp_sub_interval);
+                self.simplify_rec(rhs, &simp_sub_interval);
+
                 let lhs_simp = self.simplification_signals.get(lhs.as_ref()).unwrap();
                 let rhs_simp = self.simplification_signals.get(rhs.as_ref()).unwrap();
 
@@ -131,7 +139,7 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
                                 simplification_signal.set(&i, f.unwrap());
                             })
                     });
-                todo!()
+                simplification_signal
             }
         };
         self.simplification_signals
@@ -269,45 +277,56 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
+    use std::{fs, rc::Rc};
+
+    use rstest::*;
+
+    use crate::{parser::mltl_parser, trace_parser::trace_parser};
 
     use super::*;
 
-    #[test]
-    fn test_until() {
-        let a = AtomicProposition {
+    #[fixture]
+    fn aps<T>() -> (NNFFormula<T>, NNFFormula<T>, NNFFormula<T>, NNFFormula<T>) {
+        let a = NNFFormula::AP(AtomicProposition {
             name: Rc::from("a"),
             negated: false,
-        };
-        let b = AtomicProposition {
+        });
+        let b = NNFFormula::AP(AtomicProposition {
             name: Rc::from("b"),
             negated: false,
-        };
-        let c = AtomicProposition {
+        });
+        let c = NNFFormula::AP(AtomicProposition {
             name: Rc::from("c"),
             negated: false,
-        };
-        let d = AtomicProposition {
+        });
+        let d = NNFFormula::AP(AtomicProposition {
             name: Rc::from("d"),
             negated: false,
-        };
+        });
+        (a, b, c, d)
+    }
+
+    #[rstest]
+    fn test_until(
+        aps: (
+            NNFFormula<u32>,
+            NNFFormula<u32>,
+            NNFFormula<u32>,
+            NNFFormula<u32>,
+        ),
+    ) {
+        let (a, b, c, d) = aps;
 
         let unknown_interval = Interval::bounded(0, 1);
 
-        let mut lhs_simp = Signal::indicator(
-            &Interval::bounded(0, 2),
-            NNFFormula::AP(a.clone()),
-            NNFFormula::False,
-        );
-        lhs_simp.set(&Interval::bounded(3, 5), NNFFormula::AP(b.clone()));
-        lhs_simp.set(&Interval::bounded(6, 10), NNFFormula::AP(c.clone()));
+        let mut lhs_simp =
+            Signal::indicator(&Interval::bounded(0, 2), a.clone(), NNFFormula::False);
+        lhs_simp.set(&Interval::bounded(3, 5), b.clone());
+        lhs_simp.set(&Interval::bounded(6, 10), c.clone());
 
-        let mut rhs_simp = Signal::indicator(
-            &Interval::bounded(4, 7),
-            NNFFormula::AP(d.clone()),
-            NNFFormula::False,
-        );
-        rhs_simp.set(&Interval::bounded(9, 12), NNFFormula::AP(d.clone()));
+        let mut rhs_simp =
+            Signal::indicator(&Interval::bounded(4, 7), d.clone(), NNFFormula::False);
+        rhs_simp.set(&Interval::bounded(9, 12), d.clone());
 
         let until_interval = Interval::bounded(0, 5);
 
@@ -321,41 +340,27 @@ mod tests {
         println!("{}", simp.at(1).as_ref().unwrap());
     }
 
-    #[test]
-    fn test_release() {
-        let a = AtomicProposition {
-            name: Rc::from("a"),
-            negated: false,
-        };
-        let b = AtomicProposition {
-            name: Rc::from("b"),
-            negated: false,
-        };
-        let c = AtomicProposition {
-            name: Rc::from("c"),
-            negated: false,
-        };
-        let d = AtomicProposition {
-            name: Rc::from("d"),
-            negated: false,
-        };
+    #[rstest]
+    fn test_release(
+        aps: (
+            NNFFormula<u32>,
+            NNFFormula<u32>,
+            NNFFormula<u32>,
+            NNFFormula<u32>,
+        ),
+    ) {
+        let (a, b, c, d) = aps;
 
         let unknown_interval = Interval::bounded(0, 1);
 
-        let mut rhs_simp = Signal::indicator(
-            &Interval::bounded(0, 2),
-            NNFFormula::AP(a.clone()),
-            NNFFormula::False,
-        );
-        rhs_simp.set(&Interval::bounded(3, 5), NNFFormula::AP(b.clone()));
-        rhs_simp.set(&Interval::bounded(6, 10), NNFFormula::AP(c.clone()));
+        let mut rhs_simp =
+            Signal::indicator(&Interval::bounded(0, 2), a.clone(), NNFFormula::False);
+        rhs_simp.set(&Interval::bounded(3, 5), b.clone());
+        rhs_simp.set(&Interval::bounded(6, 10), c.clone());
 
-        let mut lhs_simp = Signal::indicator(
-            &Interval::bounded(4, 7),
-            NNFFormula::AP(d.clone()),
-            NNFFormula::False,
-        );
-        lhs_simp.set(&Interval::bounded(9, 12), NNFFormula::AP(d.clone()));
+        let mut lhs_simp =
+            Signal::indicator(&Interval::bounded(4, 7), d.clone(), NNFFormula::False);
+        lhs_simp.set(&Interval::bounded(9, 12), d.clone());
         lhs_simp.set(&Interval::unbounded(0), NNFFormula::False);
 
         let release_interval = Interval::bounded(0, 5);
@@ -368,5 +373,41 @@ mod tests {
         );
         println!("{}", simp.at(0).as_ref().unwrap());
         println!("{}", simp.at(1).as_ref().unwrap());
+    }
+
+    #[rstest]
+    #[case("ri5")]
+    #[case("rg1")]
+    fn test_presimplified(#[case] rule: &str) {
+        let presimplified_rule: NNFFormula<_> = mltl_parser::formula(
+            fs::read_to_string(format!("{}.txt", rule).as_str())
+                .expect("File exists")
+                .as_str(),
+        )
+        .expect("Syntax is correct")
+        .into();
+        let naive_rule: NNFFormula<_> = mltl_parser::formula(
+            fs::read_to_string(format!("{}_naive.txt", rule).as_str())
+                .expect("File exists")
+                .as_str(),
+        )
+        .expect("Syntax is correct")
+        .into();
+        let trace = trace_parser::trace(
+            fs::read_to_string(format!("trace_{}.txt", rule).as_str())
+                .expect("File exists")
+                .as_str(),
+        )
+        .expect("Syntax is correct");
+        let now = std::time::Instant::now();
+        let mut simplifier = Simplifier::new(&naive_rule, &trace);
+        simplifier.simplify();
+        let simplified = simplifier
+            .simplification_signals
+            .get(&naive_rule)
+            .unwrap()
+            .at(0);
+        println!("{:.2?}", now.elapsed());
+        assert_eq!(&presimplified_rule, simplified);
     }
 }
