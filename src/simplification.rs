@@ -75,7 +75,7 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
                 let unknown_intervals = satisfaction_signal
                     .intervals_where_eq(&Kleene::Unknown)
                     .into_iter()
-                    .map(|i| i.intersect(int))
+                    .map(|i| i.intersect(interval))
                     .filter(|i| !i.is_empty());
 
                 let mut simplification_signal =
@@ -98,7 +98,41 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
                     });
                 todo!()
             }
-            _ => todo!(),
+            NNFFormula::Release(lhs, int, rhs) => {
+                let lhs_simp = self.simplification_signals.get(lhs.as_ref()).unwrap();
+                let rhs_simp = self.simplification_signals.get(rhs.as_ref()).unwrap();
+
+                let satisfaction_signal = self
+                    .knowledge
+                    .satisfaction_signals()
+                    .get(formula)
+                    .expect("knowledge should contain all subformulas");
+                let unknown_intervals = satisfaction_signal
+                    .intervals_where_eq(&Kleene::Unknown)
+                    .into_iter()
+                    .map(|i| i.intersect(interval))
+                    .filter(|i| !i.is_empty());
+
+                let mut simplification_signal =
+                    satisfaction_signal.map(|kleene_value| match kleene_value {
+                        Kleene::True => NNFFormula::True,
+                        Kleene::False => NNFFormula::False,
+                        Kleene::Unknown => formula.clone(),
+                    });
+
+                unknown_intervals
+                    .map(|unknown_interval| {
+                        Self::get_release_simplification(&unknown_interval, lhs_simp, int, rhs_simp)
+                    })
+                    .for_each(|simp| {
+                        simp.into_intervals_where(|opt| opt.is_some())
+                            .into_iter()
+                            .for_each(|(i, f)| {
+                                simplification_signal.set(&i, f.unwrap());
+                            })
+                    });
+                todo!()
+            }
         };
         self.simplification_signals
             .insert(formula, simplification_signal);
