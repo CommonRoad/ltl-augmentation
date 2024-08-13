@@ -231,11 +231,47 @@ impl<T: Integer + Unsigned + Copy + Hash> NNFFormula<T> {
     }
 
     pub fn until(lhs: Self, int: Interval<T>, rhs: Self) -> Self {
+        if matches!(rhs, NNFFormula::False) || int.is_empty() {
+            return NNFFormula::False;
+        }
+        if matches!(rhs, NNFFormula::True) {
+            // Due to MLTL semantics for U[a, b]: rhs always holds directly at a, so lhs is never required
+            return NNFFormula::True;
+        }
+        if matches!(lhs, NNFFormula::False) || int.is_singleton() {
+            return NNFFormula::next(*int.lb().expect("interval should not be empty"), rhs);
+        }
         NNFFormula::Until(Box::new(lhs), int, Box::new(rhs))
     }
 
     pub fn release(lhs: Self, int: Interval<T>, rhs: Self) -> Self {
+        if matches!(rhs, NNFFormula::False) {
+            // This requires false to hold in the current state, which is impossible
+            return NNFFormula::False;
+        }
+        if matches!(rhs, NNFFormula::True) | int.is_empty() {
+            // Due to MLTL semantics, rhs only needs to hold within the interval
+            return NNFFormula::True;
+        }
+        if matches!(lhs, NNFFormula::True) {
+            return NNFFormula::next(*int.lb().expect("interval should not be empty"), rhs);
+        }
+        if int.is_singleton() {
+            return NNFFormula::Release(Box::new(NNFFormula::False), int, Box::new(rhs));
+        }
         NNFFormula::Release(Box::new(lhs), int, Box::new(rhs))
+    }
+
+    pub fn finally(int: Interval<T>, sub: Self) -> Self {
+        NNFFormula::until(NNFFormula::True, int, sub)
+    }
+
+    pub fn globally(int: Interval<T>, sub: Self) -> Self {
+        NNFFormula::release(NNFFormula::False, int, sub)
+    }
+
+    pub fn next(time: T, sub: Self) -> Self {
+        NNFFormula::globally(Interval::singleton(time), sub)
     }
 
     pub fn collect_aps(&self) -> HashSet<AtomicProposition> {
