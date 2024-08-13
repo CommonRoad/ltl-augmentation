@@ -281,8 +281,53 @@ impl<T: Integer + Unsigned + SaturatingSub + Copy> std::ops::Sub for Interval<T>
     }
 }
 
+pub struct IntervalIterator<T> {
+    next: Option<T>,
+    ub: Option<T>,
+}
+
+impl<T: Integer + Copy> Iterator for IntervalIterator<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let ret = self.next;
+        if let Some(x) = self.next.as_mut() {
+            x.inc();
+        }
+        if self.ub.is_some_and(|ub| self.next.is_some_and(|x| x > ub)) {
+            self.next = None;
+        }
+        ret
+    }
+}
+
+impl<T: Integer + Copy> IntoIterator for Interval<T> {
+    type Item = T;
+
+    type IntoIter = IntervalIterator<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            Interval::Bounded { lb, ub } => IntervalIterator {
+                next: Some(lb),
+                ub: Some(ub),
+            },
+            Interval::Unbounded { lb } => IntervalIterator {
+                next: Some(lb),
+                ub: None,
+            },
+            Interval::Empty => IntervalIterator {
+                next: None,
+                ub: None,
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use super::*;
     use std::collections::HashSet;
 
@@ -310,5 +355,20 @@ mod tests {
             .into_iter()
             .collect::<HashSet<_>>()
         );
+    }
+
+    #[test]
+    fn test_iter() {
+        let interval = Interval::bounded(3, 7);
+        assert_eq!(interval.into_iter().collect_vec(), (3..=7).collect_vec());
+
+        let interval = Interval::unbounded(5);
+        assert_eq!(
+            interval.into_iter().take(1000).collect_vec(),
+            (5..).take(1000).collect_vec()
+        );
+
+        let interval: Interval<i32> = Interval::empty();
+        assert_eq!(interval.into_iter().collect_vec(), vec![])
     }
 }
