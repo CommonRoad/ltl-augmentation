@@ -45,6 +45,7 @@ pub enum Formula<T> {
     Release(Box<Formula<T>>, Interval<T>, Box<Formula<T>>),
     Globally(Interval<T>, Box<Formula<T>>),
     Finally(Interval<T>, Box<Formula<T>>),
+    Next(T, Box<Formula<T>>),
 }
 
 impl<T: Integer + Unsigned + Copy> Formula<T> {
@@ -89,6 +90,10 @@ impl<T: Integer + Unsigned + Copy> Formula<T> {
     pub fn finally(int: Interval<T>, sub: Self) -> Self {
         Formula::Finally(int, Box::new(sub))
     }
+
+    pub fn next(time: T, sub: Self) -> Self {
+        Formula::Next(time, Box::new(sub))
+    }
 }
 
 impl<T: Display> Formula<T> {
@@ -119,6 +124,9 @@ impl<T: Display> Formula<T> {
             }
             Formula::Finally(int, sub) => {
                 Tree::new(format!("F{}", int)).with_leaves([sub.to_termtree()])
+            }
+            Formula::Next(time, sub) => {
+                Tree::new(format!("X[{}]", time)).with_leaves([sub.to_termtree()])
             }
         }
     }
@@ -302,15 +310,14 @@ impl<T: Integer + Unsigned + Copy + Hash> From<Formula<T>> for NNFFormula<T> {
             Formula::Or(subs) => NNFFormula::or(subs.into_iter().map(|f| f.into())),
             Formula::Implies(lhs, rhs) => Formula::or([Formula::Not(lhs), *rhs]).into(),
 
-            Formula::Until(lhs, int, rhs) => NNFFormula::Until(lhs.into(), int, rhs.into()),
-            Formula::Release(lhs, int, rhs) => NNFFormula::Release(lhs.into(), int, rhs.into()),
+            Formula::Until(lhs, int, rhs) => NNFFormula::until((*lhs).into(), int, (*rhs).into()),
+            Formula::Release(lhs, int, rhs) => {
+                NNFFormula::release((*lhs).into(), int, (*rhs).into())
+            }
 
-            Formula::Globally(int, sub) => {
-                NNFFormula::Release(Box::new(NNFFormula::False), int, sub.into())
-            }
-            Formula::Finally(int, sub) => {
-                NNFFormula::Until(Box::new(NNFFormula::True), int, sub.into())
-            }
+            Formula::Globally(int, sub) => NNFFormula::globally(int, (*sub).into()),
+            Formula::Finally(int, sub) => NNFFormula::finally(int, (*sub).into()),
+            Formula::Next(time, sub) => NNFFormula::next(time, (*sub).into()),
 
             Formula::Not(sub) => match *sub {
                 Formula::AP(AtomicProposition { name, negated }) => {
@@ -339,6 +346,7 @@ impl<T: Integer + Unsigned + Copy + Hash> From<Formula<T>> for NNFFormula<T> {
 
                 Formula::Globally(int, sub) => Formula::finally(int, Formula::Not(sub)).into(),
                 Formula::Finally(int, sub) => Formula::globally(int, Formula::Not(sub)).into(),
+                Formula::Next(time, sub) => Formula::next(time, Formula::Not(sub)).into(),
 
                 Formula::Not(sub) => (*sub).into(),
             },

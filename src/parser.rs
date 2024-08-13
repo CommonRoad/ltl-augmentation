@@ -12,9 +12,21 @@ peg::parser! {
                 lhs:@ __ int:until_operator() __ rhs:(@) { Formula::until(lhs, int, rhs) }
                 lhs:@ __ int:release_operator() __ rhs:(@) { Formula::release(lhs, int, rhs) }
                 --
-                int:finally_operator() __ sub:@ { Formula::finally(int, sub) }
-                int:globally_operator() __ sub:@ { Formula::globally(int, sub) }
-                int:next_operator() __ sub:@ { Formula::globally(int, sub) }
+                int:finally_operator() __ sub:@ {
+                    if int.is_singleton() {
+                        Formula::next(*int.lb().unwrap(), sub)
+                    } else {
+                        Formula::finally(int, sub)
+                    }
+                }
+                int:globally_operator() __ sub:@ {
+                    if int.is_singleton() {
+                        Formula::next(*int.lb().unwrap(), sub)
+                    } else {
+                        Formula::globally(int, sub)
+                    }
+                }
+                time:next_operator() __ sub:@ { Formula::next(time, sub) }
                 --
                 lhs:@ _ implies_operator() _ rhs:(@) { Formula::implies(lhs, rhs) }
                 --
@@ -57,7 +69,7 @@ peg::parser! {
 
         rule globally_operator() -> Interval<u32> = "G" i:interval()? { i.unwrap_or_else(|| Interval::unbounded(0)) }
 
-        rule next_operator() -> Interval<u32> = "X" i:singleton_interval()? { i.unwrap_or_else(|| Interval::singleton(1)) }
+        rule next_operator() -> u32 = "X" t:singleton()? { t.unwrap_or(1) }
 
         rule interval() -> Interval<u32>
             = unbounded_interval() / bounded_interval() / singleton_interval() / expected!("Bounded, unbounded, or singleton interval")
@@ -75,7 +87,10 @@ peg::parser! {
             = "[" lb:number() _ "," _ ("*" / "inf") "]" { Interval::unbounded(lb) }
 
         rule singleton_interval() -> Interval<u32>
-            = "[" x:number() "]" { Interval::singleton(x) }
+            = x:singleton() { Interval::singleton(x) }
+
+        rule singleton() -> u32
+            = "[" x:number() "]" { x }
 
         rule number() -> u32
             = n:$(['0'..='9']+) {? n.parse().or(Err("u32")) }
