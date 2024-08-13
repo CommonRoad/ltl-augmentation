@@ -91,14 +91,19 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
     }
 
     fn get_until_simplification(
-        unknown_interval: &Interval<u32>,
-        lhs_simp: &FormulaSignal<u32>,
-        until_interval: &Interval<u32>,
-        rhs_simp: &FormulaSignal<u32>,
-    ) -> FormulaSignal<u32> {
+        unknown_interval: &Interval<T>,
+        lhs_simp: &FormulaSignal<T>,
+        until_interval: &Interval<T>,
+        rhs_simp: &FormulaSignal<T>,
+    ) -> FormulaSignal<T> {
         let last_change = lhs_simp.last_change().max(rhs_simp.last_change());
         let mut simp_signal = Signal::uniform(NNFFormula::False);
-        for t in interval_iter(unknown_interval) {
+        if unknown_interval.is_empty() {
+            return simp_signal;
+        }
+        let mut t = *unknown_interval.lb().unwrap();
+        let ub = unknown_interval.ub();
+        while ub.is_some_and(|&ub| t <= ub) {
             let omega = *until_interval + Interval::singleton(t);
             let splits = lhs_simp.get_refined_intervals_in(rhs_simp, &omega);
             let mut disjunction = NNFFormula::False;
@@ -112,14 +117,14 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
                 if matches!(until, NNFFormula::False) {
                     continue;
                 }
-                if x < 1 {
+                if x < T::one() {
                     disjunction = NNFFormula::or([disjunction, until]);
                     continue;
                 }
                 // [t + a, x - 1]
                 let globally_interval = until_interval
                     .minkowski_sum(Interval::singleton(t))
-                    .intersect(&Interval::bounded(0, x - 1));
+                    .intersect(&Interval::bounded(T::zero(), x.saturating_sub(&T::one())));
                 let conjunction = NNFFormula::and(
                     lhs_simp
                         .get_intervals_in(&globally_interval)
@@ -140,54 +145,11 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
                 break;
             } else {
                 simp_signal.set(&Interval::singleton(t), disjunction);
+                t.inc();
             }
         }
         simp_signal
     }
-}
-
-fn interval_iter(&interval: &Interval<u32>) -> Box<dyn Iterator<Item = u32>> {
-    match interval {
-        Interval::Empty => Box::new(std::iter::empty()),
-        Interval::Bounded { lb, ub } => Box::new(lb..=ub),
-        Interval::Unbounded { lb } => Box::new(lb..),
-    }
-}
-
-fn default_simp_mapping<T>(trace: &Trace<T, Kleene>) -> HashMap<NNFFormula<T>, FormulaSignal<T>>
-where
-    T: Integer + Unsigned + Copy + SaturatingSub + Hash,
-{
-    let mut mapping: HashMap<_, _> = trace
-        .get_signals()
-        .iter()
-        .flat_map(|(name, signal)| {
-            let positive = NNFFormula::AP(AtomicProposition {
-                name: name.clone(),
-                negated: false,
-            });
-            let pos_simp = signal.map(|v| match v {
-                Kleene::True => NNFFormula::True,
-                Kleene::False => NNFFormula::False,
-                Kleene::Unknown => positive.clone(),
-            });
-
-            let negative = NNFFormula::AP(AtomicProposition {
-                name: name.clone(),
-                negated: true,
-            });
-            let neg_simp = signal.map(|v| match v {
-                Kleene::True => NNFFormula::False,
-                Kleene::False => NNFFormula::True,
-                Kleene::Unknown => negative.clone(),
-            });
-
-            [(positive, pos_simp), (negative, neg_simp)]
-        })
-        .collect();
-    mapping.insert(NNFFormula::True, Signal::uniform(NNFFormula::True));
-    mapping.insert(NNFFormula::False, Signal::uniform(NNFFormula::False));
-    mapping
 }
 
 #[cfg(test)]
