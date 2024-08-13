@@ -107,33 +107,33 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
     {
         let unknown_intervals = simplification_signal
             .intervals_where(|f| !matches!(f, NNFFormula::True | NNFFormula::False))
-                    .into_iter()
+            .into_iter()
             .map(|i| i.intersect(relevant_interval))
-                    .filter(|i| !i.is_empty());
+            .filter(|i| !i.is_empty());
 
-                unknown_intervals
-                    .map(|unknown_interval| {
+        unknown_intervals
+            .map(|unknown_interval| {
                 simplify_interval(&unknown_interval, lhs_simp, formula_interval, rhs_simp)
+            })
+            .for_each(|simp| {
+                simp.into_intervals_where(|opt| opt.is_some())
+                    .into_iter()
+                    .for_each(|(i, f)| {
+                        simplification_signal.set(&i, f.unwrap());
                     })
-                    .for_each(|simp| {
-                        simp.into_intervals_where(|opt| opt.is_some())
-                            .into_iter()
-                            .for_each(|(i, f)| {
-                                simplification_signal.set(&i, f.unwrap());
-                            })
-                    });
-            }
+            });
+    }
 
     fn simp_sig_from_sat_sig(&self, formula: &NNFFormula<T>) -> FormulaSignal<T> {
-                let satisfaction_signal = self
-                    .knowledge
-                    .satisfaction_signals()
-                    .get(formula)
-                    .expect("knowledge should contain all subformulas");
-                    satisfaction_signal.map(|kleene_value| match kleene_value {
-                        Kleene::True => NNFFormula::True,
-                        Kleene::False => NNFFormula::False,
-                        Kleene::Unknown => formula.clone(),
+        let satisfaction_signal = self
+            .knowledge
+            .satisfaction_signals()
+            .get(formula)
+            .expect("knowledge should contain all subformulas");
+        satisfaction_signal.map(|kleene_value| match kleene_value {
+            Kleene::True => NNFFormula::True,
+            Kleene::False => NNFFormula::False,
+            Kleene::Unknown => formula.clone(),
         })
     }
 
@@ -277,7 +277,7 @@ mod tests {
     use super::*;
 
     #[fixture]
-    fn aps<T>() -> (NNFFormula<T>, NNFFormula<T>, NNFFormula<T>, NNFFormula<T>) {
+    fn aps<T>() -> [NNFFormula<T>; 4] {
         let a = NNFFormula::AP(AtomicProposition {
             name: Rc::from("a"),
             negated: false,
@@ -294,19 +294,12 @@ mod tests {
             name: Rc::from("d"),
             negated: false,
         });
-        (a, b, c, d)
+        [a, b, c, d]
     }
 
     #[rstest]
-    fn test_until(
-        aps: (
-            NNFFormula<u32>,
-            NNFFormula<u32>,
-            NNFFormula<u32>,
-            NNFFormula<u32>,
-        ),
-    ) {
-        let (a, b, c, d) = aps;
+    fn test_until(aps: [NNFFormula<u32>; 4]) {
+        let [a, b, c, d] = aps;
 
         let unknown_interval = Interval::bounded(0, 1);
 
@@ -332,15 +325,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_release(
-        aps: (
-            NNFFormula<u32>,
-            NNFFormula<u32>,
-            NNFFormula<u32>,
-            NNFFormula<u32>,
-        ),
-    ) {
-        let (a, b, c, d) = aps;
+    fn test_release(aps: [NNFFormula<u32>; 4]) {
+        let [a, b, c, d] = aps;
 
         let unknown_interval = Interval::bounded(0, 1);
 
