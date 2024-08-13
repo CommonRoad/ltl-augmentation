@@ -213,7 +213,7 @@ impl<T: Integer + Unsigned + Copy + Hash> NNFFormula<T> {
             0 => NNFFormula::True,
             1 => subs.pop_first().expect("Length is 1"),
             _ if subs.iter().any(|f| matches!(f, NNFFormula::False)) => NNFFormula::False,
-            _ => NNFFormula::And(subs.into_iter().collect()),
+            _ => NNFFormula::And(subs),
         }
     }
 
@@ -230,7 +230,7 @@ impl<T: Integer + Unsigned + Copy + Hash> NNFFormula<T> {
             0 => NNFFormula::False,
             1 => subs.pop_first().expect("Length is 1"),
             _ if subs.iter().any(|f| matches!(f, NNFFormula::True)) => NNFFormula::True,
-            _ => NNFFormula::Or(subs.into_iter().collect()),
+            _ => NNFFormula::Or(subs),
         }
     }
 
