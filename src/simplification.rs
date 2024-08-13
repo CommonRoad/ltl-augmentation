@@ -117,7 +117,7 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
         }
         let mut t = *unknown_interval.lb().unwrap();
         let ub = unknown_interval.ub();
-        while ub.is_some_and(|&ub| t <= ub) {
+        while ub.map(|&ub| t <= ub).unwrap_or(true) {
             let omega = *until_interval + Interval::singleton(t);
             let splits = lhs_simp.get_refined_intervals_in(rhs_simp, &omega);
             let mut disjunction = NNFFormula::False;
