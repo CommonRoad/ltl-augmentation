@@ -55,6 +55,14 @@ impl<T: Integer + Unsigned + Copy, V: Eq> Signal<T, V> {
         }
     }
 
+    pub fn last_change(&self) -> T {
+        *self
+            .values
+            .keys()
+            .next_back()
+            .expect("Signal is never empty")
+    }
+
     pub fn set(&mut self, interval: &Interval<T>, value: V)
     where
         V: Clone,
@@ -104,9 +112,9 @@ impl<T: Integer + Unsigned + Copy, V: Eq> Signal<T, V> {
 
     // map_injective + combine_injective that omit normalization
 
-    pub fn combine<F, W: Eq>(&self, other: &Signal<T, V>, op: F) -> Signal<T, W>
+    pub fn combine<F, U, W: Eq>(&self, other: &Signal<T, U>, op: F) -> Signal<T, W>
     where
-        F: Fn(&V, &V) -> W,
+        F: Fn(&V, &U) -> W,
     {
         // TODO: Could simplify this using merge
         let mut values = BTreeMap::new();
@@ -220,10 +228,13 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub, V: Eq> Signal<T, V> {
         self.clone().into_intervals()
     }
 
-    pub fn get_refined_intervals(&self, other: &Self) -> Vec<Interval<T>> {
-        self.values
-            .keys()
-            .merge(other.values.keys())
+    pub fn get_intervals_in(&self, interval: &Interval<T>) -> Vec<Interval<T>> {
+        if interval.is_empty() {
+            return vec![];
+        }
+        let relevant_times = self.values.keys().filter(|t| interval.contains(t));
+        std::iter::once(interval.lb().expect("interval should not be empty"))
+            .chain(relevant_times)
             .dedup()
             .copied()
             .map(Some)
@@ -231,7 +242,42 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub, V: Eq> Signal<T, V> {
             .tuple_windows()
             .map(|(lb, ub)| match ub {
                 Some(ub) => Interval::bounded(lb.unwrap(), ub.saturating_sub(&T::one())),
-                None => Interval::unbounded(lb.unwrap()),
+                None => match interval.ub() {
+                    Some(ub) => Interval::bounded(lb.unwrap(), *ub),
+                    None => Interval::unbounded(lb.unwrap()),
+                },
+            })
+            .collect()
+    }
+
+    pub fn get_refined_intervals(&self, other: &Self) -> Vec<Interval<T>> {
+        self.get_refined_intervals_in(other, &Interval::unbounded(T::zero()))
+    }
+
+    pub fn get_refined_intervals_in(
+        &self,
+        other: &Self,
+        interval: &Interval<T>,
+    ) -> Vec<Interval<T>> {
+        if interval.is_empty() {
+            return vec![];
+        }
+        let relevant_times_self = self.values.keys().filter(|t| interval.contains(t));
+        let relevant_times_other = other.values.keys().filter(|t| interval.contains(t));
+        std::iter::once(interval.lb().expect("interval should not be empty"))
+            .chain(relevant_times_self)
+            .merge(relevant_times_other)
+            .dedup()
+            .copied()
+            .map(Some)
+            .chain(std::iter::once(None))
+            .tuple_windows()
+            .map(|(lb, ub)| match ub {
+                Some(ub) => Interval::bounded(lb.unwrap(), ub.saturating_sub(&T::one())),
+                None => match interval.ub() {
+                    Some(ub) => Interval::bounded(lb.unwrap(), *ub),
+                    None => Interval::unbounded(lb.unwrap()),
+                },
             })
             .collect()
     }
@@ -321,6 +367,18 @@ mod tests {
                 Interval::bounded(6, 10),
                 Interval::unbounded(11)
             ]
-        )
+        );
+
+        let refined_intervals =
+            signal1.get_refined_intervals_in(&signal2, &Interval::bounded(2, 7));
+        assert_eq!(
+            refined_intervals,
+            vec![
+                Interval::singleton(2),
+                Interval::bounded(3, 4),
+                Interval::singleton(5),
+                Interval::bounded(6, 7)
+            ]
+        );
     }
 }

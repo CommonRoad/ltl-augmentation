@@ -12,6 +12,10 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub, V> Trace<T, V> {
         Trace(signals)
     }
 
+    pub fn get_signals(&self) -> &HashMap<Rc<str>, Signal<T, V>> {
+        &self.0
+    }
+
     pub fn get_ap_signal(&self, name: &str) -> Option<&Signal<T, V>> {
         self.0.get(name)
     }

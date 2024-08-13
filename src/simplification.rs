@@ -91,51 +91,66 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
     }
 
     fn get_until_simplification(
-        &self,
-        unknown_interval: &Interval<T>,
-        lhs_simp: &FormulaSignal<T>,
-        until_interval: &Interval<T>,
-        rhs_simp: &FormulaSignal<T>,
-    ) -> FormulaSignal<T> {
-        let refined_intervals = lhs_simp
-            .get_refined_intervals(rhs_simp)
-            .into_iter()
-            .map(|i| i.intersect(unknown_interval))
-            .filter(|i| !i.is_empty())
-            .collect_vec();
-        for i in &refined_intervals {
-            let lb = match i {
-                Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => lb,
-                Interval::Empty => {
-                    unreachable!("all empty intervals should have been filtered out")
+        unknown_interval: &Interval<u32>,
+        lhs_simp: &FormulaSignal<u32>,
+        until_interval: &Interval<u32>,
+        rhs_simp: &FormulaSignal<u32>,
+    ) -> FormulaSignal<u32> {
+        let last_change = lhs_simp.last_change().max(rhs_simp.last_change());
+        let mut simp_signal = Signal::uniform(NNFFormula::False);
+        for t in interval_iter(unknown_interval) {
+            let omega = *until_interval + Interval::singleton(t);
+            let splits = lhs_simp.get_refined_intervals_in(rhs_simp, &omega);
+            let mut disjunction = NNFFormula::False;
+            for split in splits {
+                let x = *split.lb().expect("split should not be empty");
+                let until = NNFFormula::until(
+                    lhs_simp.at(x).clone(),
+                    split - Interval::singleton(t),
+                    rhs_simp.at(x).clone(),
+                );
+                if matches!(until, NNFFormula::False) {
+                    continue;
                 }
-            };
-            let until_formula = |t| {
-                let int = *i - Interval::singleton(t);
-                NNFFormula::until(lhs_simp.at(*lb).clone(), int, rhs_simp.at(*lb).clone())
-            };
-            let affected = i.back_shift(*until_interval).intersect(unknown_interval);
+                if x < 1 {
+                    disjunction = NNFFormula::or([disjunction, until]);
+                    continue;
+                }
+                // [t + a, x - 1]
+                let globally_interval = until_interval
+                    .minkowski_sum(Interval::singleton(t))
+                    .intersect(&Interval::bounded(0, x - 1));
+                let conjunction = NNFFormula::and(
+                    lhs_simp
+                        .get_intervals_in(&globally_interval)
+                        .into_iter()
+                        .map(|interval| {
+                            NNFFormula::globally(
+                                interval - Interval::singleton(t),
+                                lhs_simp.at(*interval.lb().unwrap()).clone(),
+                            )
+                        })
+                        .chain(std::iter::once(until)),
+                );
+                disjunction = NNFFormula::or([disjunction, conjunction]);
+            }
+            if t >= last_change {
+                let rest = Interval::unbounded(t).intersect(unknown_interval);
+                simp_signal.set(&rest, disjunction);
+                break;
+            } else {
+                simp_signal.set(&Interval::singleton(t), disjunction);
+            }
         }
-        let with_values = refined_intervals
-            .into_iter()
-            .map(|i| match i {
-                Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => {
-                    (i, lhs_simp.at(lb), rhs_simp.at(lb))
-                }
-                Interval::Empty => {
-                    unreachable!("all empty intervals should have been filtered out")
-                }
-            })
-            .collect_vec();
-        // until_interval = [a, b]
-        // Let t be a symbolic parameter for the time at which we evaluate the formula
-        // Map lhs_simp by creating globally formula
-        // G[lb - t, ub - t] lhs_simp
-        // Combine lhs_simp and rhs_simp by creating until formula
-        // lhs_simp U[lb - t, ub - t] rhs_simp
-        // Take each of the until formulas and back shift by [a, b] to obtain the affected interval
-        // Collect all globally formulas between lb of affected interval + a and ub of until formula interval
-        todo!()
+        simp_signal
+    }
+}
+
+fn interval_iter(&interval: &Interval<u32>) -> Box<dyn Iterator<Item = u32>> {
+    match interval {
+        Interval::Empty => Box::new(std::iter::empty()),
+        Interval::Bounded { lb, ub } => Box::new(lb..=ub),
+        Interval::Unbounded { lb } => Box::new(lb..),
     }
 }
 
@@ -173,4 +188,59 @@ where
     mapping.insert(NNFFormula::True, Signal::uniform(NNFFormula::True));
     mapping.insert(NNFFormula::False, Signal::uniform(NNFFormula::False));
     mapping
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use super::*;
+
+    #[test]
+    fn test_until() {
+        let a = AtomicProposition {
+            name: Rc::from("a"),
+            negated: false,
+        };
+        let b = AtomicProposition {
+            name: Rc::from("b"),
+            negated: false,
+        };
+        let c = AtomicProposition {
+            name: Rc::from("c"),
+            negated: false,
+        };
+        let d = AtomicProposition {
+            name: Rc::from("d"),
+            negated: false,
+        };
+
+        let unknown_interval = Interval::bounded(0, 1);
+
+        let mut lhs_simp = Signal::indicator(
+            &Interval::bounded(0, 2),
+            NNFFormula::AP(a.clone()),
+            NNFFormula::False,
+        );
+        lhs_simp.set(&Interval::bounded(3, 5), NNFFormula::AP(b.clone()));
+        lhs_simp.set(&Interval::bounded(6, 10), NNFFormula::AP(c.clone()));
+
+        let mut rhs_simp = Signal::indicator(
+            &Interval::bounded(4, 7),
+            NNFFormula::AP(d.clone()),
+            NNFFormula::False,
+        );
+        rhs_simp.set(&Interval::bounded(9, 12), NNFFormula::AP(d.clone()));
+
+        let until_interval = Interval::bounded(0, 5);
+
+        let simp = Simplifier::<u32>::get_until_simplification(
+            &unknown_interval,
+            &lhs_simp,
+            &until_interval,
+            &rhs_simp,
+        );
+        println!("{}", simp.at(0));
+        println!("{}", simp.at(1));
+    }
 }
