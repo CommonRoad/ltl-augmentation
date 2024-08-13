@@ -193,40 +193,36 @@ impl<T: Integer + Unsigned + Copy + Hash> NNFFormula<T> {
     }
 
     pub fn and(subs: impl IntoIterator<Item = Self>) -> Self {
-        let mut subs: BTreeSet<_> = subs.into_iter().collect();
+        let mut subs: BTreeSet<_> = subs
+            .into_iter()
+            .filter(|f| !matches!(f, NNFFormula::True))
+            .flat_map(|f| match f {
+                NNFFormula::And(subs) => subs,
+                f => [f].into(),
+            })
+            .collect();
         match subs.len() {
             0 => NNFFormula::True,
             1 => subs.pop_first().expect("Length is 1"),
             _ if subs.iter().any(|f| matches!(f, NNFFormula::False)) => NNFFormula::False,
-            _ => NNFFormula::And(
-                subs.into_iter()
-                    .filter(|f| !matches!(f, NNFFormula::True))
-                    .flat_map(|f| match f {
-                        NNFFormula::And(subs) => subs,
-                        f => [f].into(),
-                    })
-                    .unique()
-                    .collect(),
-            ),
+            _ => NNFFormula::And(subs.into_iter().collect()),
         }
     }
 
     pub fn or(subs: impl IntoIterator<Item = Self>) -> Self {
-        let mut subs: BTreeSet<_> = subs.into_iter().collect();
+        let mut subs: BTreeSet<_> = subs
+            .into_iter()
+            .filter(|f| !matches!(f, NNFFormula::False))
+            .flat_map(|f| match f {
+                NNFFormula::Or(subs) => subs,
+                f => [f].into(),
+            })
+            .collect();
         match subs.len() {
             0 => NNFFormula::False,
             1 => subs.pop_first().expect("Length is 1"),
             _ if subs.iter().any(|f| matches!(f, NNFFormula::True)) => NNFFormula::True,
-            _ => NNFFormula::Or(
-                subs.into_iter()
-                    .filter(|f| !matches!(f, NNFFormula::False))
-                    .flat_map(|f| match f {
-                        NNFFormula::Or(subs) => subs,
-                        f => [f].into(),
-                    })
-                    .unique()
-                    .collect(),
-            ),
+            _ => NNFFormula::Or(subs.into_iter().collect()),
         }
     }
 
