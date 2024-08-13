@@ -37,6 +37,32 @@ impl<T: Ord> Interval<T> {
         matches!(self, Interval::Empty)
     }
 
+    pub fn is_singleton(&self) -> bool {
+        matches!(self, Interval::Bounded { lb, ub } if lb == ub)
+    }
+
+    pub fn contains(&self, v: &T) -> bool {
+        match self {
+            Interval::Empty => false,
+            Interval::Bounded { lb, ub } => lb <= v && v <= ub,
+            Interval::Unbounded { lb } => lb <= v,
+        }
+    }
+
+    pub fn lb(&self) -> Option<&T> {
+        match self {
+            Interval::Empty => None,
+            Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => Some(lb),
+        }
+    }
+
+    pub fn ub(&self) -> Option<&T> {
+        match self {
+            Interval::Empty | Interval::Unbounded { .. } => None,
+            Interval::Bounded { ub, .. } => Some(ub),
+        }
+    }
+
     pub fn intersect(&self, other: &Self) -> Self
     where
         T: Copy,
