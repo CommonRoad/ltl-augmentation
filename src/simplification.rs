@@ -1,10 +1,9 @@
 use std::{collections::HashMap, hash::Hash};
 
-use itertools::Itertools;
 use num::{traits::SaturatingSub, Integer, Unsigned};
 
 use crate::{
-    formula::{AtomicProposition, NNFFormula},
+    formula::NNFFormula,
     monitoring::{kleene::KleeneMonitorSignal, monitor::Monitor},
     sets::interval::Interval,
     signals::{signal::Signal, truth_values::Kleene},
@@ -63,87 +62,79 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
                     })
                 }
             }
-            NNFFormula::Until(lhs, int, rhs) => {
+            NNFFormula::Until(lhs, int, rhs) | NNFFormula::Release(lhs, int, rhs) => {
                 let simp_sub_interval = *interval + *int;
+
                 self.simplify_rec(lhs, &simp_sub_interval);
                 self.simplify_rec(rhs, &simp_sub_interval);
-
                 let lhs_simp = self.simplification_signals.get(lhs.as_ref()).unwrap();
                 let rhs_simp = self.simplification_signals.get(rhs.as_ref()).unwrap();
 
-                let satisfaction_signal = self
-                    .knowledge
-                    .satisfaction_signals()
-                    .get(formula)
-                    .expect("knowledge should contain all subformulas");
-                let unknown_intervals = satisfaction_signal
-                    .intervals_where_eq(&Kleene::Unknown)
-                    .into_iter()
-                    .map(|i| i.intersect(interval))
-                    .filter(|i| !i.is_empty());
-
-                let mut simplification_signal =
-                    satisfaction_signal.map(|kleene_value| match kleene_value {
-                        Kleene::True => NNFFormula::True,
-                        Kleene::False => NNFFormula::False,
-                        Kleene::Unknown => formula.clone(),
-                    });
-
-                unknown_intervals
-                    .map(|unknown_interval| {
-                        Self::get_until_simplification(&unknown_interval, lhs_simp, int, rhs_simp)
-                    })
-                    .for_each(|simp| {
-                        simp.into_intervals_where(|opt| opt.is_some())
-                            .into_iter()
-                            .for_each(|(i, f)| {
-                                simplification_signal.set(&i, f.unwrap());
-                            })
-                    });
-                simplification_signal
-            }
-            NNFFormula::Release(lhs, int, rhs) => {
-                let simp_sub_interval = *interval + *int;
-                self.simplify_rec(lhs, &simp_sub_interval);
-                self.simplify_rec(rhs, &simp_sub_interval);
-
-                let lhs_simp = self.simplification_signals.get(lhs.as_ref()).unwrap();
-                let rhs_simp = self.simplification_signals.get(rhs.as_ref()).unwrap();
-
-                let satisfaction_signal = self
-                    .knowledge
-                    .satisfaction_signals()
-                    .get(formula)
-                    .expect("knowledge should contain all subformulas");
-                let unknown_intervals = satisfaction_signal
-                    .intervals_where_eq(&Kleene::Unknown)
-                    .into_iter()
-                    .map(|i| i.intersect(interval))
-                    .filter(|i| !i.is_empty());
-
-                let mut simplification_signal =
-                    satisfaction_signal.map(|kleene_value| match kleene_value {
-                        Kleene::True => NNFFormula::True,
-                        Kleene::False => NNFFormula::False,
-                        Kleene::Unknown => formula.clone(),
-                    });
-
-                unknown_intervals
-                    .map(|unknown_interval| {
-                        Self::get_release_simplification(&unknown_interval, lhs_simp, int, rhs_simp)
-                    })
-                    .for_each(|simp| {
-                        simp.into_intervals_where(|opt| opt.is_some())
-                            .into_iter()
-                            .for_each(|(i, f)| {
-                                simplification_signal.set(&i, f.unwrap());
-                            })
-                    });
+                let mut simplification_signal = self.simp_sig_from_sat_sig(formula);
+                Self::refine_unknowns_binary(
+                    &mut simplification_signal,
+                    interval,
+                    lhs_simp,
+                    int,
+                    rhs_simp,
+                    if matches!(formula, NNFFormula::Until(..)) {
+                        Self::get_until_simplification
+                    } else {
+                        Self::get_release_simplification
+                    },
+                );
                 simplification_signal
             }
         };
         self.simplification_signals
             .insert(formula, simplification_signal);
+    }
+
+    fn refine_unknowns_binary<F>(
+        simplification_signal: &mut FormulaSignal<T>,
+        relevant_interval: &Interval<T>,
+        lhs_simp: &FormulaSignal<T>,
+        formula_interval: &Interval<T>,
+        rhs_simp: &FormulaSignal<T>,
+        simplify_interval: F,
+    ) where
+        F: Fn(
+            &Interval<T>,
+            &FormulaSignal<T>,
+            &Interval<T>,
+            &FormulaSignal<T>,
+        ) -> Signal<T, Option<NNFFormula<T>>>,
+    {
+        let unknown_intervals = simplification_signal
+            .intervals_where(|f| !matches!(f, NNFFormula::True | NNFFormula::False))
+                    .into_iter()
+            .map(|i| i.intersect(relevant_interval))
+                    .filter(|i| !i.is_empty());
+
+                unknown_intervals
+                    .map(|unknown_interval| {
+                simplify_interval(&unknown_interval, lhs_simp, formula_interval, rhs_simp)
+                    })
+                    .for_each(|simp| {
+                        simp.into_intervals_where(|opt| opt.is_some())
+                            .into_iter()
+                            .for_each(|(i, f)| {
+                                simplification_signal.set(&i, f.unwrap());
+                            })
+                    });
+            }
+
+    fn simp_sig_from_sat_sig(&self, formula: &NNFFormula<T>) -> FormulaSignal<T> {
+                let satisfaction_signal = self
+                    .knowledge
+                    .satisfaction_signals()
+                    .get(formula)
+                    .expect("knowledge should contain all subformulas");
+                    satisfaction_signal.map(|kleene_value| match kleene_value {
+                        Kleene::True => NNFFormula::True,
+                        Kleene::False => NNFFormula::False,
+                        Kleene::Unknown => formula.clone(),
+        })
     }
 
     fn get_globally_simplification(
@@ -281,7 +272,7 @@ mod tests {
 
     use rstest::*;
 
-    use crate::{parser::mltl_parser, trace_parser::trace_parser};
+    use crate::{formula::AtomicProposition, parser::mltl_parser, trace_parser::trace_parser};
 
     use super::*;
 
