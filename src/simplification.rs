@@ -320,8 +320,20 @@ mod tests {
             &until_interval,
             &rhs_simp,
         );
-        println!("{}", simp.at(0).as_ref().unwrap());
-        println!("{}", simp.at(1).as_ref().unwrap());
+        assert_eq!(
+            simp.at(0).as_ref().unwrap(),
+            &mltl_parser::formula("(b U[4, 5] d) & (G[0, 2] a) & (X[3] b)")
+                .unwrap()
+                .into()
+        );
+        assert_eq!(
+            simp.at(1).as_ref().unwrap(),
+            &mltl_parser::formula(
+                "((b U[3, 4] d) & (G[0, 1] a) & (X[2] b)) | ((G[0, 1] a) & (G[2, 4] b) & (X[5] d))"
+            )
+            .unwrap()
+            .into()
+        );
     }
 
     #[rstest]
@@ -338,7 +350,7 @@ mod tests {
             Signal::indicator(&Interval::bounded(4, 7), d.clone(), NNFFormula::False);
         lhs_simp.set(&Interval::bounded(9, 12), d.clone());
 
-        let release_interval = Interval::bounded(0, 10);
+        let release_interval = Interval::bounded(0, 5);
 
         let simp = Simplifier::<u32>::get_release_simplification(
             &unknown_interval,
@@ -346,8 +358,22 @@ mod tests {
             &release_interval,
             &rhs_simp,
         );
-        println!("{}", simp.at(0).as_ref().unwrap());
-        println!("{}", simp.at(1).as_ref().unwrap());
+        assert_eq!(
+            simp.at(0).as_ref().unwrap(),
+            &mltl_parser::formula(
+                "((b U[4, 5] b & d) & (G[0, 2] a) & (X[3] b)) | ((G[0, 2] a) & (G[3, 5] b))"
+            )
+            .unwrap()
+            .into()
+        );
+        assert_eq!(
+            simp.at(1).as_ref().unwrap(),
+            &mltl_parser::formula(
+                "((b U[3, 4] b & d) & (G[0, 1] a) & (X[2] b)) | ((G[0, 1] a) & (G[2, 4] b) & (X[5] c)) | ((G[0, 1] a) & (G[2, 4] b) & (X[5] c & d))"
+            )
+            .unwrap()
+            .into()
+        );
     }
 
     #[rstest]
