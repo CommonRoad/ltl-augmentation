@@ -353,6 +353,19 @@ mod tests {
     }
 
     #[rstest]
+    fn test_example() {
+        let phi = mltl_parser::formula("G (omc_e & front & oar & (F omc_o) -> !(!rl & (F rl)))")
+            .expect("Syntax is correct")
+            .into();
+        let trace =
+            trace_parser::trace(include_str!("../example_trace.txt")).expect("Syntax is correct");
+        let mut simplifier = Simplifier::new(&phi, &trace);
+        simplifier.simplify();
+        let simplified = simplifier.simplification_signals.get(&phi).unwrap().at(0);
+        println!("{}", simplified);
+    }
+
+    #[rstest]
     #[case("ri5")]
     #[case("rg1")]
     fn test_presimplified(#[case] rule: &str) {

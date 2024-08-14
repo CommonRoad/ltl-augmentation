@@ -1,0 +1,17 @@
+omc_e omc_o front oar rl
+T F T T U
+T F T T U
+T F T T U
+T F T T U
+T F T T U
+T F U T U
+T T U T U
+T T U T U
+U T U T U
+U T U T U
+U T U T U
+U T U T U
+U T U T U
+U T U T U
+U T U T U
+U T U T U
