@@ -22,6 +22,18 @@ impl<T: Ord> Interval<T> {
         }
     }
 
+    pub fn bounded_ub_excl(lb: T, mut ub: T) -> Self
+    where
+        T: Integer + Copy,
+    {
+        if lb >= ub {
+            Interval::Empty
+        } else {
+            ub.dec();
+            Interval::Bounded { lb, ub }
+        }
+    }
+
     pub fn unbounded(lb: T) -> Self {
         Interval::Unbounded { lb }
     }
