@@ -248,7 +248,7 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash> Simplifier<'a, T> 
                     .minkowski_sum(Interval::singleton(t))
                     .intersect(&Interval::bounded(T::zero(), x.saturating_sub(&T::one())));
                 let conjunction = NNFFormula::and([
-                    Self::get_globally_simplification(t, &globally_interval, lhs_simp),
+                    Self::get_globally_simplification(t, &globally_interval, rhs_simp),
                     until,
                 ]);
                 disjunction = NNFFormula::or([disjunction, conjunction]);
@@ -330,17 +330,15 @@ mod tests {
 
         let unknown_interval = Interval::bounded(0, 1);
 
-        let mut rhs_simp =
-            Signal::indicator(&Interval::bounded(0, 2), a.clone(), NNFFormula::False);
+        let mut rhs_simp = Signal::indicator(&Interval::bounded(0, 2), a.clone(), NNFFormula::True);
         rhs_simp.set(&Interval::bounded(3, 5), b.clone());
         rhs_simp.set(&Interval::bounded(6, 10), c.clone());
 
         let mut lhs_simp =
             Signal::indicator(&Interval::bounded(4, 7), d.clone(), NNFFormula::False);
         lhs_simp.set(&Interval::bounded(9, 12), d.clone());
-        lhs_simp.set(&Interval::unbounded(0), NNFFormula::False);
 
-        let release_interval = Interval::bounded(0, 5);
+        let release_interval = Interval::bounded(0, 10);
 
         let simp = Simplifier::<u32>::get_release_simplification(
             &unknown_interval,
