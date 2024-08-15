@@ -1,15 +1,14 @@
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     fmt::Display,
     hash::Hash,
     rc::Rc,
 };
 
-use itertools::Itertools;
-use num::{Integer, Unsigned};
+use num::{traits::SaturatingSub, Integer, Unsigned};
 use termtree::Tree;
 
-use crate::sets::interval::Interval;
+use crate::sets::{interval::Interval, interval_set::IntervalSet};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AtomicProposition {
@@ -294,6 +293,39 @@ impl<T: Integer + Unsigned + Copy + Hash> NNFFormula<T> {
                 let mut set = lhs.collect_aps();
                 set.extend(rhs.collect_aps());
                 set
+            }
+        }
+    }
+
+    pub fn collect_aps_with_time(&self) -> HashMap<AtomicProposition, IntervalSet<T>>
+    where
+        T: SaturatingSub,
+    {
+        let mut aps = HashMap::new();
+        self.collect_aps_with_time_rec(&Interval::singleton(T::zero()), &mut aps);
+        aps
+    }
+
+    fn collect_aps_with_time_rec(
+        &self,
+        interval: &Interval<T>,
+        map: &mut HashMap<AtomicProposition, IntervalSet<T>>,
+    ) where
+        T: SaturatingSub,
+    {
+        match self {
+            NNFFormula::True | NNFFormula::False => {}
+            NNFFormula::AP(ap) => {
+                map.entry(ap.clone()).or_default().add(interval);
+            }
+            NNFFormula::And(subs) | NNFFormula::Or(subs) => {
+                subs.iter()
+                    .for_each(|sub| sub.collect_aps_with_time_rec(interval, map));
+            }
+            NNFFormula::Until(lhs, int, rhs) | NNFFormula::Release(lhs, int, rhs) => {
+                let new_interval = interval.minkowski_sum(*int);
+                lhs.collect_aps_with_time_rec(&new_interval, map);
+                rhs.collect_aps_with_time_rec(&new_interval, map);
             }
         }
     }
