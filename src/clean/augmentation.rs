@@ -3,7 +3,6 @@ use std::collections::{BTreeSet, HashMap};
 use crate::clean::{
     formula::NNFFormula,
     monitoring::{kleene::KleeneMonitorSequence, monitor::Monitor},
-    trace::Trace,
     truth_values::Kleene,
 };
 
@@ -123,9 +122,7 @@ impl<'a> Augmenter<'a> {
                 NNFFormula::Until(lhs, interval, rhs) => {
                     self.augment_until(lhs, interval, rhs, step)
                 }
-                NNFFormula::Release(lhs, interval, rhs) => {
-                    self.augment_release(lhs, interval, rhs, step)
-                }
+                NNFFormula::Globally(interval, sub) => self.augment_globally(sub, interval, step),
                 _ => unreachable!("This function is only called for compound formulas"),
             };
             let aug_seq = self.get_subformula_augmentation_mut(formula);
@@ -160,7 +157,16 @@ impl<'a> Augmenter<'a> {
         }))
     }
 
-    fn augment_globally<'b>(
+    fn augment_globally(
+        &self,
+        sub: &NNFFormula,
+        globally_interval: &Interval,
+        step: Time,
+    ) -> NNFFormula {
+        NNFFormula::and(self.augment_globally_iter(sub, globally_interval, step))
+    }
+
+    fn augment_globally_iter<'b>(
         &'b self,
         sub: &NNFFormula,
         globally_interval: &Interval,
@@ -189,18 +195,44 @@ impl<'a> Augmenter<'a> {
         rhs: &NNFFormula,
         step: Time,
     ) -> NNFFormula {
-        todo!()
-    }
-
-    fn augment_release(
-        &self,
-        lhs: &NNFFormula,
-        release_interval: &Interval,
-        rhs: &NNFFormula,
-        step: Time,
-    ) -> NNFFormula {
-        let globally = NNFFormula::and(self.augment_globally(rhs, release_interval, step));
-        let until = todo!();
+        let step_interval = Interval::singleton(step);
+        let lhs_augmentation = self.get_subformula_augmentation(lhs);
+        let rhs_augmentation = self.get_subformula_augmentation(rhs);
+        NNFFormula::or(
+            lhs_augmentation
+                .refined_interval_covering(
+                    rhs_augmentation,
+                    &until_interval.minkowski_sum(step_interval),
+                )
+                .into_iter()
+                .map(|interval| {
+                    let interval_lb = *interval.lb().unwrap();
+                    let until = NNFFormula::until(
+                        lhs_augmentation
+                            .at(interval_lb)
+                            .clone()
+                            .expect("Augmentation should have been computed"),
+                        interval - step_interval,
+                        rhs_augmentation
+                            .at(interval_lb)
+                            .clone()
+                            .expect("Augmentation should have been computed"),
+                    );
+                    if interval_lb > step {
+                        let globally = self.augment_globally_iter(
+                            lhs,
+                            &Interval::bounded_ub_excl(
+                                *until_interval.lb().unwrap(),
+                                interval_lb - step,
+                            ),
+                            step,
+                        );
+                        NNFFormula::and(globally.chain(std::iter::once(until)))
+                    } else {
+                        until
+                    }
+                }),
+        )
     }
 
     fn get_last_change_of_subformulas(
@@ -230,220 +262,6 @@ impl<'a> Augmenter<'a> {
             .get_mut(subformula)
             .expect("Formula should have been inserted before")
     }
-
-    // fn simplify_rec(&mut self, formula: &'a NNFFormula<Time>, interval: &Interval<Time>) {
-    //     let simplification_signal = match formula {
-    //         NNFFormula::True | NNFFormula::False | NNFFormula::AP(_) => {
-    //             self.simp_sig_from_sat_sig(formula)
-    //         }
-    //         NNFFormula::And(subs) | NNFFormula::Or(subs) => {
-    //             subs.iter().for_each(|sub| self.simplify_rec(sub, interval));
-    //             let it = subs
-    //                 .iter()
-    //                 .map(|sub| self.simplification_signals.get(sub).unwrap());
-    //             if matches!(formula, NNFFormula::And(..)) {
-    //                 it.fold(Signal::uniform(NNFFormula::True), |acc, sig| {
-    //                     acc.combine(sig, |f1, f2| NNFFormula::and([f1.clone(), f2.clone()]))
-    //                 })
-    //             } else {
-    //                 it.fold(Signal::uniform(NNFFormula::False), |acc, sig| {
-    //                     acc.combine(sig, |f1, f2| NNFFormula::or([f1.clone(), f2.clone()]))
-    //                 })
-    //             }
-    //         }
-    //         NNFFormula::Until(lhs, int, rhs) | NNFFormula::Release(lhs, int, rhs) => {
-    //             let simp_sub_interval = *interval + *int;
-
-    //             self.simplify_rec(lhs, &simp_sub_interval);
-    //             self.simplify_rec(rhs, &simp_sub_interval);
-    //             let lhs_simp = self.simplification_signals.get(lhs.as_ref()).unwrap();
-    //             let rhs_simp = self.simplification_signals.get(rhs.as_ref()).unwrap();
-
-    //             let mut simplification_signal = self.simp_sig_from_sat_sig(formula);
-    //             Self::refine_unknowns_binary(
-    //                 &mut simplification_signal,
-    //                 interval,
-    //                 lhs_simp,
-    //                 int,
-    //                 rhs_simp,
-    //                 if matches!(formula, NNFFormula::Until(..)) {
-    //                     Self::get_until_simplification
-    //                 } else {
-    //                     Self::get_release_simplification
-    //                 },
-    //             );
-    //             simplification_signal
-    //         }
-    //     };
-    //     self.simplification_signals
-    //         .insert(formula, simplification_signal);
-    // }
-
-    // fn refine_unknowns_binary<F>(
-    //     simplification_signal: &mut FormulaSignal,
-    //     relevant_interval: &Interval<Time>,
-    //     lhs_simp: &FormulaSignal,
-    //     formula_interval: &Interval<Time>,
-    //     rhs_simp: &FormulaSignal,
-    //     simplify_interval: F,
-    // ) where
-    //     F: Fn(
-    //         &Interval<Time>,
-    //         &FormulaSignal,
-    //         &Interval<Time>,
-    //         &FormulaSignal,
-    //     ) -> Signal<Time, Option<NNFFormula<Time>>>,
-    // {
-    //     let unknown_intervals = simplification_signal
-    //         .intervals_where(|f| !matches!(f, NNFFormula::True | NNFFormula::False))
-    //         .into_iter()
-    //         .map(|i| i.intersect(relevant_interval))
-    //         .filter(|i| !i.is_empty());
-
-    //     unknown_intervals
-    //         .map(|unknown_interval| {
-    //             simplify_interval(&unknown_interval, lhs_simp, formula_interval, rhs_simp)
-    //         })
-    //         .for_each(|simp| {
-    //             simp.into_intervals_where(|opt| opt.is_some())
-    //                 .into_iter()
-    //                 .for_each(|(i, f)| {
-    //                     simplification_signal.set(&i, f.unwrap());
-    //                 })
-    //         });
-    // }
-
-    // fn simp_sig_from_sat_sig(&self, formula: &NNFFormula<Time>) -> FormulaSignal {
-    //     let satisfaction_signal = self
-    //         .monitor
-    //         .satisfaction_signals()
-    //         .get(formula)
-    //         .expect("knowledge should contain all subformulas");
-    //     satisfaction_signal.map(|kleene_value| match kleene_value {
-    //         Kleene::True => NNFFormula::True,
-    //         Kleene::False => NNFFormula::False,
-    //         Kleene::Unknown => formula.clone(),
-    //     })
-    // }
-
-    // fn get_until_simplification(
-    //     unknown_interval: &Interval<Time>,
-    //     lhs_simp: &FormulaSignal,
-    //     until_interval: &Interval<Time>,
-    //     rhs_simp: &FormulaSignal,
-    // ) -> Signal<Time, Option<NNFFormula<Time>>> {
-    //     Self::get_binary_simplification(
-    //         unknown_interval,
-    //         lhs_simp,
-    //         until_interval,
-    //         rhs_simp,
-    //         |_| NNFFormula::False,
-    //         |_, rhs| rhs.clone(),
-    //         lhs_simp,
-    //     )
-    // }
-
-    // fn get_release_simplification(
-    //     unknown_interval: &Interval<Time>,
-    //     lhs_simp: &FormulaSignal,
-    //     release_interval: &Interval<Time>,
-    //     rhs_simp: &FormulaSignal,
-    // ) -> Signal<Time, Option<NNFFormula<Time>>> {
-    //     Self::get_binary_simplification(
-    //         unknown_interval,
-    //         lhs_simp,
-    //         release_interval,
-    //         rhs_simp,
-    //         |t| {
-    //             NNFFormula::and(Self::get_globally_simplification(
-    //                 t,
-    //                 &release_interval.minkowski_sum(Interval::singleton(t)),
-    //                 rhs_simp,
-    //             ))
-    //         },
-    //         |lhs, rhs| NNFFormula::and([lhs.clone(), rhs.clone()]),
-    //         rhs_simp,
-    //     )
-    // }
-
-    // fn get_binary_simplification<F, G>(
-    //     unknown_interval: &Interval<Time>,
-    //     lhs_simp: &FormulaSignal,
-    //     binary_interval: &Interval<Time>,
-    //     rhs_simp: &FormulaSignal,
-    //     get_initial_disjunction: F,
-    //     get_eventuality: G,
-    //     universality: &FormulaSignal,
-    // ) -> Signal<Time, Option<NNFFormula<Time>>>
-    // where
-    //     F: Fn(Time) -> NNFFormula<Time>,
-    //     G: Fn(&NNFFormula<Time>, &NNFFormula<Time>) -> NNFFormula<Time>,
-    // {
-    //     let mut simp_signal = Signal::uniform(None);
-
-    //     let last_change = lhs_simp.last_change().max(rhs_simp.last_change());
-    //     let mut it = unknown_interval
-    //         .intersect(&Interval::bounded(0, last_change))
-    //         .into_iter()
-    //         .peekable();
-    //     while let Some(t) = it.next() {
-    //         let relevant_interval = *binary_interval + Interval::singleton(t);
-
-    //         let constant_intervals =
-    //             lhs_simp.get_refined_intervals_in(rhs_simp, &relevant_interval);
-    //         let disjunction = constant_intervals.into_iter().filter_map(|c_int| {
-    //             let c_int_lb = *c_int.lb().expect("constant interval should not be empty");
-
-    //             // eventuality has to hold somewhere c_int - [t, t], and the universality until then
-    //             let eventuality = get_eventuality(lhs_simp.at(c_int_lb), rhs_simp.at(c_int_lb));
-    //             let until = NNFFormula::until(
-    //                 universality.at(c_int_lb).clone(),
-    //                 c_int - Interval::singleton(t),
-    //                 eventuality,
-    //             );
-    //             if matches!(until, NNFFormula::False) {
-    //                 return None;
-    //             }
-
-    //             // universality needs to hold in [t + a, x - 1], where a is the lower bound of binary_interval
-    //             let globally_interval =
-    //                 relevant_interval.intersect(&Interval::bounded_ub_excl(0, c_int_lb));
-    //             Some(NNFFormula::and(
-    //                 Self::get_globally_simplification(t, &globally_interval, universality)
-    //                     .into_iter()
-    //                     .chain(std::iter::once(until)),
-    //             ))
-    //         });
-    //         let disjunction =
-    //             NNFFormula::or(disjunction.chain(std::iter::once(get_initial_disjunction(t))));
-
-    //         if it.peek().is_none() {
-    //             // Last iteration
-    //             let rest = Interval::unbounded(t).intersect(unknown_interval);
-    //             simp_signal.set(&rest, Some(disjunction));
-    //         } else {
-    //             simp_signal.set(&Interval::singleton(t), Some(disjunction));
-    //         }
-    //     }
-    //     simp_signal
-    // }
-
-    // fn get_globally_simplification(
-    //     time: Time,
-    //     globally_interval: &Interval<Time>,
-    //     sub_simp: &FormulaSignal,
-    // ) -> Vec<NNFFormula<Time>> {
-    //     sub_simp
-    //         .get_intervals_in(globally_interval)
-    //         .into_iter()
-    //         .map(|interval| {
-    //             NNFFormula::globally(
-    //                 interval - Interval::singleton(time),
-    //                 sub_simp.at(*interval.lb().unwrap()).clone(),
-    //             )
-    //         })
-    //         .collect()
-    // }
 }
 
 #[cfg(test)]

@@ -44,6 +44,8 @@ pub trait Sequence<V> {
     }
 
     fn interval_covering(&self, interval: &Interval) -> Vec<Interval>;
+
+    fn refined_interval_covering(&self, other: &Self, interval: &Interval) -> Vec<Interval>;
 }
 
 pub trait Mappable<V, W> {
@@ -160,6 +162,25 @@ impl<V> PlainSequence<V> {
 
         PlainSequence { values }
     }
+
+    fn iter_to_interval_covering<'a>(
+        iter: impl Iterator<Item = &'a Time>,
+        interval: &Interval,
+    ) -> Vec<Interval> {
+        iter.dedup()
+            .copied()
+            .map(Some)
+            .chain(std::iter::once(None))
+            .tuple_windows()
+            .map(|(lb, ub)| match ub {
+                Some(ub) => Interval::bounded(lb.unwrap(), ub.saturating_sub(1)),
+                None => match interval.ub() {
+                    Some(ub) => Interval::bounded(lb.unwrap(), *ub),
+                    None => Interval::unbounded(lb.unwrap()),
+                },
+            })
+            .collect()
+    }
 }
 
 impl<V> Sequence<V> for PlainSequence<V> {
@@ -222,21 +243,25 @@ impl<V> Sequence<V> for PlainSequence<V> {
             return vec![];
         }
         let relevant_times = self.values.keys().filter(|t| interval.contains(t));
-        std::iter::once(interval.lb().expect("interval should not be empty"))
-            .chain(relevant_times)
-            .dedup()
-            .copied()
-            .map(Some)
-            .chain(std::iter::once(None))
-            .tuple_windows()
-            .map(|(lb, ub)| match ub {
-                Some(ub) => Interval::bounded(lb.unwrap(), ub.saturating_sub(1)),
-                None => match interval.ub() {
-                    Some(ub) => Interval::bounded(lb.unwrap(), *ub),
-                    None => Interval::unbounded(lb.unwrap()),
-                },
-            })
-            .collect()
+        Self::iter_to_interval_covering(
+            std::iter::once(interval.lb().expect("interval should not be empty"))
+                .chain(relevant_times),
+            interval,
+        )
+    }
+
+    fn refined_interval_covering(&self, other: &Self, interval: &Interval) -> Vec<Interval> {
+        if interval.is_empty() {
+            return vec![];
+        }
+        let relevant_times_self = self.values.keys().filter(|t| interval.contains(t));
+        let relevant_times_other = other.values.keys().filter(|t| interval.contains(t));
+        Self::iter_to_interval_covering(
+            std::iter::once(interval.lb().expect("interval should not be empty"))
+                .chain(relevant_times_self)
+                .merge(relevant_times_other),
+            interval,
+        )
     }
 }
 
@@ -395,6 +420,10 @@ impl<V: Eq> Sequence<V> for NormalizedSequence<V> {
 
     fn interval_covering(&self, interval: &Interval) -> Vec<Interval> {
         self.0.interval_covering(interval)
+    }
+
+    fn refined_interval_covering(&self, other: &Self, interval: &Interval) -> Vec<Interval> {
+        self.0.refined_interval_covering(&other.0, interval)
     }
 }
 
