@@ -98,6 +98,23 @@ impl<T: Integer + Unsigned + Copy, V: Eq> Signal<T, V> {
         }
     }
 
+    fn normalize(self) -> Signal<T, V> {
+        let values = self
+            .values
+            .into_iter()
+            .coalesce(|kv1, kv2| {
+                if kv1.1 == kv2.1 {
+                    Ok(kv1)
+                } else {
+                    Err((kv1, kv2))
+                }
+            })
+            .collect();
+        Signal { values }
+    }
+}
+
+impl<T: Integer + Unsigned + Copy, V> Signal<T, V> {
     pub fn map<F, W: Eq>(&self, op: F) -> Signal<T, W>
     where
         F: Fn(&V) -> W,
@@ -151,21 +168,6 @@ impl<T: Integer + Unsigned + Copy, V: Eq> Signal<T, V> {
         assert!(self_vals.peek().is_none() && other_vals.peek().is_none());
 
         Signal { values }.normalize()
-    }
-
-    fn normalize(self) -> Signal<T, V> {
-        let values = self
-            .values
-            .into_iter()
-            .coalesce(|kv1, kv2| {
-                if kv1.1 == kv2.1 {
-                    Ok(kv1)
-                } else {
-                    Err((kv1, kv2))
-                }
-            })
-            .collect();
-        Signal { values }
     }
 }
 

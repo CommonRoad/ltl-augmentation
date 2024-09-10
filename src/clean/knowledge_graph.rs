@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use itertools::iproduct;
 use petgraph::{
@@ -6,7 +9,7 @@ use petgraph::{
     graph::{DiGraph, NodeIndex},
 };
 
-use crate::formula::AtomicProposition;
+use crate::clean::{formula::AtomicProposition, truth_values::Kleene};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Literal {
@@ -178,6 +181,24 @@ impl KnowledgeGraph {
             node_map: self.node_map,
         }
     }
+
+    pub fn get_kleene_evaluation(&self, ap: &Rc<str>) -> Kleene {
+        let equivalent = self.node_of(&Literal::Atom(AtomicProposition {
+            name: ap.clone(),
+            negated: false,
+        }));
+        if let Some(equivalent) = equivalent {
+            if equivalent.contains(&Literal::True) {
+                Kleene::True
+            } else if equivalent.contains(&Literal::False) {
+                Kleene::False
+            } else {
+                Kleene::Unknown
+            }
+        } else {
+            Kleene::Unknown
+        }
+    }
 }
 
 impl Default for KnowledgeGraph {
@@ -188,8 +209,6 @@ impl Default for KnowledgeGraph {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
     use super::*;
 
     #[test]

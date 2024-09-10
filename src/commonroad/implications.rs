@@ -91,22 +91,22 @@ mod tests {
             vec![
                 (
                     AtomicProposition {
-                        name: Rc::from(format!("{}_V3", SAFE_DISTANCE.post)),
+                        name: Rc::from(format!("{}_V42", SAFE_DISTANCE.pre)),
                         negated: false
                     },
                     AtomicProposition {
-                        name: Rc::from(format!("{}_V42", SAFE_DISTANCE.pre)),
+                        name: Rc::from(format!("{}_V3", SAFE_DISTANCE.post)),
                         negated: false
                     },
                     Interval::bounded(2, 5).into()
                 ),
                 (
                     AtomicProposition {
-                        name: Rc::from(format!("{}_V42", SAFE_DISTANCE.pre)),
+                        name: Rc::from(format!("{}_V3", SAFE_DISTANCE.post)),
                         negated: false
                     },
                     AtomicProposition {
-                        name: Rc::from(format!("{}_V3", SAFE_DISTANCE.post)),
+                        name: Rc::from(format!("{}_V42", SAFE_DISTANCE.pre)),
                         negated: false
                     },
                     Interval::bounded(2, 5).into()

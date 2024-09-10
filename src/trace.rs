@@ -1,4 +1,7 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use num::{traits::SaturatingSub, Integer, Unsigned};
 
@@ -41,5 +44,17 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub, V> Trace<T, V> {
             .entry(name)
             .or_insert_with(|| Signal::new())
             .set(interval, value.clone())
+    }
+
+    pub fn from_ap_signal(signal: Signal<T, HashMap<Rc<str>, V>>, aps: &HashSet<Rc<str>>) -> Self
+    where
+        V: Eq + Clone,
+    {
+        let mut map = HashMap::new();
+        for ap in aps {
+            let ap_signal = signal.map(|m| m.get(ap).unwrap().clone());
+            map.insert(ap.clone(), ap_signal);
+        }
+        Trace(map)
     }
 }
