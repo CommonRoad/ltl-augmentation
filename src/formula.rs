@@ -5,6 +5,7 @@ use std::{
     rc::Rc,
 };
 
+use itertools::{Either, Itertools};
 use num::{traits::SaturatingSub, Integer, Unsigned};
 use termtree::Tree;
 
@@ -199,6 +200,16 @@ impl<T: Integer + Unsigned + Copy + Hash> NNFFormula<T> {
         }
     }
 
+    pub fn is_temporal(&self) -> bool {
+        match self {
+            NNFFormula::Until(_, _, _) | NNFFormula::Release(_, _, _) => true,
+            NNFFormula::And(subs) | NNFFormula::Or(subs) => {
+                subs.iter().any(NNFFormula::is_temporal)
+            }
+            NNFFormula::AP(..) | NNFFormula::True | NNFFormula::False => false,
+        }
+    }
+
     pub fn and(subs: impl IntoIterator<Item = Self>) -> Self {
         let mut subs: BTreeSet<_> = subs
             .into_iter()
@@ -274,7 +285,15 @@ impl<T: Integer + Unsigned + Copy + Hash> NNFFormula<T> {
     }
 
     pub fn next(time: T, sub: Self) -> Self {
-        NNFFormula::globally(Interval::singleton(time), sub)
+        if time.is_zero() {
+            sub
+        } else {
+            NNFFormula::globally(Interval::singleton(time), sub)
+        }
+    }
+
+    pub fn is_next(&self) -> bool {
+        matches!(self, NNFFormula::Release(lhs, int, _) if **lhs == NNFFormula::False && int.is_singleton())
     }
 
     pub fn collect_aps(&self) -> HashSet<AtomicProposition> {
@@ -327,6 +346,69 @@ impl<T: Integer + Unsigned + Copy + Hash> NNFFormula<T> {
                 lhs.collect_aps_with_time_rec(&new_interval, map);
                 rhs.collect_aps_with_time_rec(&new_interval, map);
             }
+        }
+    }
+
+    pub fn move_next_inwards(self) -> Self {
+        self.move_next_inwards_rec(T::zero())
+    }
+
+    fn move_next_inwards_rec(self, offset: T) -> Self {
+        match self {
+            f if !f.is_temporal() => {
+                if offset.is_zero() {
+                    f
+                } else {
+                    NNFFormula::next(offset, f)
+                }
+            }
+
+            NNFFormula::And(subs) => {
+                let (non_temporal, temporal): (Vec<_>, Vec<_>) =
+                    subs.into_iter().partition_map(|sub| {
+                        if sub.is_temporal() {
+                            Either::Right(sub.move_next_inwards_rec(offset))
+                        } else {
+                            Either::Left(sub)
+                        }
+                    });
+                NNFFormula::and(temporal.into_iter().chain(std::iter::once(NNFFormula::next(
+                    offset,
+                    NNFFormula::and(non_temporal),
+                ))))
+            }
+            NNFFormula::Or(subs) => {
+                let (non_temporal, temporal): (Vec<_>, Vec<_>) =
+                    subs.into_iter().partition_map(|sub| {
+                        if sub.is_temporal() {
+                            Either::Right(sub.move_next_inwards_rec(offset))
+                        } else {
+                            Either::Left(sub)
+                        }
+                    });
+                NNFFormula::or(temporal.into_iter().chain(std::iter::once(NNFFormula::next(
+                    offset,
+                    NNFFormula::or(non_temporal),
+                ))))
+            }
+
+            // Next
+            NNFFormula::Release(_, int, rhs) if self.is_next() => {
+                rhs.move_next_inwards_rec(*int.lb().expect("interval should not be empty"))
+            }
+
+            NNFFormula::Until(lhs, int, rhs) => NNFFormula::until(
+                lhs.move_next_inwards_rec(T::zero()),
+                int + Interval::singleton(offset),
+                rhs.move_next_inwards_rec(T::zero()),
+            ),
+            NNFFormula::Release(lhs, int, rhs) => NNFFormula::release(
+                lhs.move_next_inwards_rec(T::zero()),
+                int + Interval::singleton(offset),
+                rhs.move_next_inwards_rec(T::zero()),
+            ),
+
+            _ => unreachable!("AP, True, and False are covered by the first match arm"),
         }
     }
 }
