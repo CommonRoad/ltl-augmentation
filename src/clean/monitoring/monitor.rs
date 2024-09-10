@@ -91,16 +91,17 @@ impl<'a, V: TruthValue + Eq + Clone> Monitor<'a, V> {
                     )
                 }
             }
-            NNFFormula::Until(lhs, interval, rhs) | NNFFormula::Release(lhs, interval, rhs) => {
+            NNFFormula::Until(lhs, interval, rhs) => {
                 Self::compute_satisfaction_signals(lhs, trace, logicals);
                 Self::compute_satisfaction_signals(rhs, trace, logicals);
                 let lhs_signal = logicals.get(lhs.as_ref()).unwrap();
                 let rhs_signal = logicals.get(rhs.as_ref()).unwrap();
-                if matches!(formula, NNFFormula::Until(..)) {
-                    lhs_signal.until(interval, rhs_signal)
-                } else {
-                    lhs_signal.release(interval, rhs_signal)
-                }
+                lhs_signal.until(interval, rhs_signal)
+            }
+            NNFFormula::Globally(interval, sub) => {
+                Self::compute_satisfaction_signals(sub, trace, logicals);
+                let sub_signal = logicals.get(sub.as_ref()).unwrap();
+                sub_signal.globally(interval)
             }
         };
         logicals.insert(formula, logical_signal);

@@ -95,10 +95,10 @@ impl Logical for KleeneMonitorSequence {
         )
     }
 
-    fn release(&self, release_interval: &Interval, other: &Self) -> Self {
+    fn globally(&self, globally_interval: &Interval) -> Self {
         KleeneMonitorSequence::from_approximations(
-            self.over().release(release_interval, other.over()),
-            self.under().release(release_interval, other.under()),
+            self.over().globally(globally_interval),
+            self.under().globally(globally_interval),
         )
     }
 }

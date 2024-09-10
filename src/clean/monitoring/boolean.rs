@@ -33,13 +33,11 @@ impl Logical for BooleanMonitorSequence {
         BooleanSequence::from_positive_intervals(positive_intervals)
     }
 
-    fn release(&self, release_interval: &Interval, other: &Self) -> Self {
-        let lhs_intervals = self.intervals_where_eq(&false);
-        let rhs_intervals = other.intervals_where_eq(&false);
-        let negative_intervals: Vec<_> = iproduct!(lhs_intervals, rhs_intervals)
-            .flat_map(|(lhs_interval, rhs_interval)| {
-                positive_until_semantics(&lhs_interval, release_interval, &rhs_interval)
-            })
+    fn globally(&self, globally_interval: &Interval) -> Self {
+        let sub_intervals = self.intervals_where_eq(&false);
+        let negative_intervals: Vec<_> = sub_intervals
+            .into_iter()
+            .map(|sub_interval| negative_globally_semantics(&sub_interval, globally_interval))
             .collect();
         BooleanSequence::from_negative_intervals(negative_intervals)
     }
@@ -68,6 +66,10 @@ fn positive_until_semantics(
     let i2 = *rhs_interval - to_lb;
 
     [i1, i2].into_iter().filter(|i| !i.is_empty())
+}
+
+fn negative_globally_semantics(sub_interval: &Interval, globally_interval: &Interval) -> Interval {
+    *sub_interval - *globally_interval
 }
 
 #[cfg(test)]

@@ -150,7 +150,7 @@ pub enum NNFFormula {
 
     // temporal connectives
     Until(Box<NNFFormula>, Interval, Box<NNFFormula>),
-    Release(Box<NNFFormula>, Interval, Box<NNFFormula>),
+    Globally(Interval, Box<NNFFormula>),
 }
 
 impl NNFFormula {
@@ -161,7 +161,7 @@ impl NNFFormula {
             | NNFFormula::AP(..)
             | NNFFormula::And(..)
             | NNFFormula::Or(..) => Interval::singleton(0),
-            NNFFormula::Until(_, interval, _) | NNFFormula::Release(_, interval, _) => *interval,
+            NNFFormula::Until(_, interval, _) | NNFFormula::Globally(interval, _) => *interval,
         }
     }
 
@@ -171,9 +171,10 @@ impl NNFFormula {
                 Box::new(std::iter::empty())
             }
             NNFFormula::And(subs) | NNFFormula::Or(subs) => Box::new(subs.iter()),
-            NNFFormula::Until(lhs, _, rhs) | NNFFormula::Release(lhs, _, rhs) => {
+            NNFFormula::Until(lhs, _, rhs) => {
                 Box::new(std::iter::once(lhs.as_ref()).chain(std::iter::once(rhs.as_ref())))
             }
+            NNFFormula::Globally(_, sub) => Box::new(std::iter::once(sub.as_ref())),
         }
     }
 
@@ -192,43 +193,7 @@ impl NNFFormula {
             NNFFormula::Until(lhs, int, rhs) => {
                 NNFFormula::release(lhs.negated(), int, rhs.negated())
             }
-            NNFFormula::Release(lhs, int, rhs) => {
-                NNFFormula::until(lhs.negated(), int, rhs.negated())
-            }
-        }
-    }
-
-    pub fn is_negation_of(&self, other: &Self) -> bool {
-        match (self, other) {
-            (NNFFormula::AP(ap1), NNFFormula::AP(ap2)) if ap1.name == ap2.name => {
-                ap1.negated != ap2.negated
-            }
-            (NNFFormula::True, NNFFormula::False) | (NNFFormula::False, NNFFormula::True) => true,
-            (NNFFormula::And(subs1), NNFFormula::Or(subs2))
-            | (NNFFormula::Or(subs1), NNFFormula::And(subs2))
-                if subs1.len() == subs2.len() =>
-            {
-                subs1
-                    .iter()
-                    .all(|f1| subs2.iter().any(|f2| f1.is_negation_of(f2)))
-            }
-            (NNFFormula::Until(lhs1, int1, rhs1), NNFFormula::Release(lhs2, int2, rhs2))
-            | (NNFFormula::Release(lhs1, int1, rhs1), NNFFormula::Until(lhs2, int2, rhs2))
-                if int1 == int2 =>
-            {
-                lhs1.is_negation_of(lhs2) && rhs1.is_negation_of(rhs2)
-            }
-            _ => false,
-        }
-    }
-
-    pub fn is_temporal(&self) -> bool {
-        match self {
-            NNFFormula::Until(_, _, _) | NNFFormula::Release(_, _, _) => true,
-            NNFFormula::And(subs) | NNFFormula::Or(subs) => {
-                subs.iter().any(NNFFormula::is_temporal)
-            }
-            NNFFormula::AP(..) | NNFFormula::True | NNFFormula::False => false,
+            NNFFormula::Globally(int, sub) => NNFFormula::finally(int, sub.negated()),
         }
     }
 
@@ -280,6 +245,16 @@ impl NNFFormula {
         NNFFormula::Until(Box::new(lhs), int, Box::new(rhs))
     }
 
+    pub fn globally(int: Interval, sub: Self) -> Self {
+        if matches!(sub, NNFFormula::True) || int.is_empty() {
+            return NNFFormula::True;
+        }
+        if matches!(sub, NNFFormula::False) {
+            return NNFFormula::False;
+        }
+        NNFFormula::Globally(int, Box::new(sub))
+    }
+
     pub fn release(lhs: Self, int: Interval, rhs: Self) -> Self {
         if matches!(rhs, NNFFormula::False) {
             // This requires false to hold in the current state, which is impossible
@@ -289,21 +264,17 @@ impl NNFFormula {
             // Due to MLTL semantics, rhs only needs to hold within the interval
             return NNFFormula::True;
         }
-        if matches!(lhs, NNFFormula::True) {
+        if matches!(lhs, NNFFormula::True) || int.is_singleton() {
             return NNFFormula::next(*int.lb().expect("interval should not be empty"), rhs);
         }
-        if int.is_singleton() {
-            return NNFFormula::Release(Box::new(NNFFormula::False), int, Box::new(rhs));
-        }
-        NNFFormula::Release(Box::new(lhs), int, Box::new(rhs))
+        NNFFormula::or([
+            NNFFormula::globally(int, rhs.clone()),
+            NNFFormula::until(rhs.clone(), int, NNFFormula::and([lhs, rhs])),
+        ])
     }
 
     pub fn finally(int: Interval, sub: Self) -> Self {
         NNFFormula::until(NNFFormula::True, int, sub)
-    }
-
-    pub fn globally(int: Interval, sub: Self) -> Self {
-        NNFFormula::release(NNFFormula::False, int, sub)
     }
 
     pub fn next(time: Time, sub: Self) -> Self {
@@ -315,7 +286,7 @@ impl NNFFormula {
     }
 
     pub fn is_next(&self) -> bool {
-        matches!(self, NNFFormula::Release(lhs, int, _) if **lhs == NNFFormula::False && int.is_singleton())
+        matches!(self, NNFFormula::Globally(int, _) if int.is_singleton())
     }
 
     pub fn collect_aps(&self) -> HashSet<AtomicProposition> {
@@ -330,11 +301,12 @@ impl NNFFormula {
                     acc
                 })
                 .unwrap_or_default(),
-            NNFFormula::Until(lhs, _, rhs) | NNFFormula::Release(lhs, _, rhs) => {
+            NNFFormula::Until(lhs, _, rhs) => {
                 let mut set = lhs.collect_aps();
                 set.extend(rhs.collect_aps());
                 set
             }
+            NNFFormula::Globally(_, sub) => sub.collect_aps(),
         }
     }
 
@@ -358,74 +330,15 @@ impl NNFFormula {
                 subs.iter()
                     .for_each(|sub| sub.collect_aps_with_time_rec(interval, map));
             }
-            NNFFormula::Until(lhs, int, rhs) | NNFFormula::Release(lhs, int, rhs) => {
+            NNFFormula::Until(lhs, int, rhs) => {
                 let new_interval = interval.minkowski_sum(*int);
                 lhs.collect_aps_with_time_rec(&new_interval, map);
                 rhs.collect_aps_with_time_rec(&new_interval, map);
             }
-        }
-    }
-
-    pub fn move_next_inwards(self) -> Self {
-        self.move_next_inwards_rec(0)
-    }
-
-    fn move_next_inwards_rec(self, offset: Time) -> Self {
-        match self {
-            f if !f.is_temporal() => {
-                if offset == 0 {
-                    f
-                } else {
-                    NNFFormula::next(offset, f)
-                }
+            NNFFormula::Globally(int, sub) => {
+                let new_interval = interval.minkowski_sum(*int);
+                sub.collect_aps_with_time_rec(&new_interval, map);
             }
-
-            NNFFormula::And(subs) => {
-                let (non_temporal, temporal): (Vec<_>, Vec<_>) =
-                    subs.into_iter().partition_map(|sub| {
-                        if sub.is_temporal() {
-                            Either::Right(sub.move_next_inwards_rec(offset))
-                        } else {
-                            Either::Left(sub)
-                        }
-                    });
-                NNFFormula::and(temporal.into_iter().chain(std::iter::once(NNFFormula::next(
-                    offset,
-                    NNFFormula::and(non_temporal),
-                ))))
-            }
-            NNFFormula::Or(subs) => {
-                let (non_temporal, temporal): (Vec<_>, Vec<_>) =
-                    subs.into_iter().partition_map(|sub| {
-                        if sub.is_temporal() {
-                            Either::Right(sub.move_next_inwards_rec(offset))
-                        } else {
-                            Either::Left(sub)
-                        }
-                    });
-                NNFFormula::or(temporal.into_iter().chain(std::iter::once(NNFFormula::next(
-                    offset,
-                    NNFFormula::or(non_temporal),
-                ))))
-            }
-
-            // Next
-            NNFFormula::Release(_, int, rhs) if self.is_next() => {
-                rhs.move_next_inwards_rec(*int.lb().expect("interval should not be empty"))
-            }
-
-            NNFFormula::Until(lhs, int, rhs) => NNFFormula::until(
-                lhs.move_next_inwards_rec(0),
-                int + Interval::singleton(offset),
-                rhs.move_next_inwards_rec(0),
-            ),
-            NNFFormula::Release(lhs, int, rhs) => NNFFormula::release(
-                lhs.move_next_inwards_rec(0),
-                int + Interval::singleton(offset),
-                rhs.move_next_inwards_rec(0),
-            ),
-
-            _ => unreachable!("AP, True, and False are covered by the first match arm"),
         }
     }
 }
@@ -505,26 +418,13 @@ impl NNFFormula {
                 Tree::new("∨".to_string()).with_leaves(subs.iter().map(|f| f.to_termtree()))
             }
             NNFFormula::Until(lhs, int, rhs) if **lhs == NNFFormula::True => {
-                let op = if matches!(int, Interval::Bounded { lb, ub } if lb == ub) {
-                    "X"
-                } else {
-                    "F"
-                };
-                Tree::new(format!("{}{}", op, int)).with_leaves([rhs.to_termtree()])
-            }
-            NNFFormula::Release(lhs, int, rhs) if **lhs == NNFFormula::False => {
-                let op = if matches!(int, Interval::Bounded { lb, ub } if lb == ub) {
-                    "X"
-                } else {
-                    "G"
-                };
-                Tree::new(format!("{}{}", op, int)).with_leaves([rhs.to_termtree()])
+                Tree::new(format!("F{}", int)).with_leaves([rhs.to_termtree()])
             }
             NNFFormula::Until(lhs, int, rhs) => {
                 Tree::new(format!("U{}", int)).with_leaves([lhs.to_termtree(), rhs.to_termtree()])
             }
-            NNFFormula::Release(lhs, int, rhs) => {
-                Tree::new(format!("R{}", int)).with_leaves([lhs.to_termtree(), rhs.to_termtree()])
+            NNFFormula::Globally(int, sub) => {
+                Tree::new(format!("G{}", int)).with_leaves([sub.to_termtree()])
             }
         }
     }
@@ -547,7 +447,7 @@ impl From<NNFFormula> for Formula {
             NNFFormula::Or(subs) => Formula::or(subs.into_iter().map(|f| f.into())),
 
             NNFFormula::Until(lhs, int, rhs) => Formula::Until(lhs.into(), int, rhs.into()),
-            NNFFormula::Release(lhs, int, rhs) => Formula::Release(lhs.into(), int, rhs.into()),
+            NNFFormula::Globally(int, sub) => Formula::Globally(int, sub.into()),
         }
     }
 }
