@@ -250,13 +250,13 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub, V: Eq> Signal<T, V> {
             .collect()
     }
 
-    pub fn get_refined_intervals(&self, other: &Self) -> Vec<Interval<T>> {
+    pub fn get_refined_intervals<W>(&self, other: &Signal<T, W>) -> Vec<Interval<T>> {
         self.get_refined_intervals_in(other, &Interval::unbounded(T::zero()))
     }
 
-    pub fn get_refined_intervals_in(
+    pub fn get_refined_intervals_in<W>(
         &self,
-        other: &Self,
+        other: &Signal<T, W>,
         interval: &Interval<T>,
     ) -> Vec<Interval<T>> {
         if interval.is_empty() {

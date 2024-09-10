@@ -21,6 +21,16 @@ pub enum Kleene {
     False,
 }
 
+impl From<bool> for Kleene {
+    fn from(b: bool) -> Self {
+        if b {
+            Kleene::True
+        } else {
+            Kleene::False
+        }
+    }
+}
+
 impl TruthValue for Kleene {
     fn top() -> Self {
         Kleene::True
