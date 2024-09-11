@@ -31,13 +31,89 @@ impl Literal {
     }
 }
 
+pub trait ComplexityFunction {
+    fn complexity(literal: &Literal) -> u32;
+}
+
+pub struct DefaultComplexityFunction;
+
+impl ComplexityFunction for DefaultComplexityFunction {
+    fn complexity(literal: &Literal) -> u32 {
+        match literal {
+            Literal::True => 0,
+            Literal::False => 0,
+            Literal::Atom(_) => 1,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct KnowledgeGraph {
-    graph: DiGraph<HashSet<Literal>, ()>,
+struct EquivalenceClass<C> {
+    class: HashSet<Literal>,
+    representative: Literal,
+    representative_complexity: u32,
+    complexity_function: std::marker::PhantomData<C>,
+}
+
+impl<C: ComplexityFunction> EquivalenceClass<C> {
+    fn insert(&mut self, literal: Literal) {
+        let new_complexity = C::complexity(&literal);
+        if new_complexity < self.representative_complexity {
+            self.representative = literal.clone();
+            self.representative_complexity = new_complexity;
+        }
+        self.class.insert(literal);
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Literal> {
+        self.class.iter()
+    }
+
+    fn extend(&mut self, other: Self) {
+        self.class.extend(other.class);
+        if other.representative_complexity < self.representative_complexity {
+            self.representative = other.representative;
+            self.representative_complexity = other.representative_complexity;
+        }
+    }
+}
+
+impl<C: ComplexityFunction> From<Literal> for EquivalenceClass<C> {
+    fn from(literal: Literal) -> Self {
+        EquivalenceClass {
+            representative_complexity: C::complexity(&literal),
+            representative: literal.clone(),
+            class: [literal].into(),
+            complexity_function: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<C: ComplexityFunction> TryFrom<HashSet<Literal>> for EquivalenceClass<C> {
+    type Error = ();
+
+    fn try_from(value: HashSet<Literal>) -> Result<Self, Self::Error> {
+        let representative = value
+            .iter()
+            .min_by_key(|literal| C::complexity(literal))
+            .ok_or(())?
+            .clone();
+        Ok(EquivalenceClass {
+            representative_complexity: C::complexity(&representative),
+            representative,
+            class: value,
+            complexity_function: std::marker::PhantomData,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct KnowledgeGraph<C = DefaultComplexityFunction> {
+    graph: DiGraph<EquivalenceClass<C>, ()>,
     node_map: HashMap<Literal, NodeIndex>,
 }
 
-impl KnowledgeGraph {
+impl<C: ComplexityFunction> KnowledgeGraph<C> {
     pub fn new() -> Self {
         let mut knowledge_graph = KnowledgeGraph {
             graph: DiGraph::new(),
@@ -48,8 +124,16 @@ impl KnowledgeGraph {
         knowledge_graph
     }
 
-    pub fn node_of(&self, literal: &Literal) -> Option<&HashSet<Literal>> {
-        self.node_map.get(literal).map(|idx| &self.graph[*idx])
+    pub fn class_of(&self, literal: &Literal) -> Option<&HashSet<Literal>> {
+        self.node_map
+            .get(literal)
+            .map(|idx| &self.graph[*idx].class)
+    }
+
+    pub fn representative_of(&self, literal: &Literal) -> Option<&Literal> {
+        self.node_map
+            .get(literal)
+            .map(|idx| &self.graph[*idx].representative)
     }
 
     pub fn add_true_literal(&mut self, literal: Literal) {
@@ -118,10 +202,10 @@ impl KnowledgeGraph {
         match (self.node_map.get(&literal), self.node_map.get(&negated)) {
             (Some(idx_pos), Some(idx_neg)) => (*idx_pos, *idx_neg),
             (None, None) => {
-                let idx_pos = self.graph.add_node([literal.clone()].into());
+                let idx_pos = self.graph.add_node(EquivalenceClass::from(literal.clone()));
                 self.node_map.insert(literal, idx_pos);
 
-                let idx_neg = self.graph.add_node([negated.clone()].into());
+                let idx_neg = self.graph.add_node(EquivalenceClass::from(negated.clone()));
                 self.node_map.insert(negated, idx_neg);
 
                 (idx_pos, idx_neg)
@@ -183,14 +267,14 @@ impl KnowledgeGraph {
     }
 
     pub fn get_kleene_evaluation(&self, ap: &Rc<str>) -> Kleene {
-        let equivalent = self.node_of(&Literal::Atom(AtomicProposition {
+        let representative = self.representative_of(&Literal::Atom(AtomicProposition {
             name: ap.clone(),
             negated: false,
         }));
-        if let Some(equivalent) = equivalent {
-            if equivalent.contains(&Literal::True) {
+        if let Some(representative) = representative {
+            if matches!(representative, Literal::True) {
                 Kleene::True
-            } else if equivalent.contains(&Literal::False) {
+            } else if matches!(representative, Literal::False) {
                 Kleene::False
             } else {
                 Kleene::Unknown
@@ -266,18 +350,23 @@ mod tests {
     #[rstest]
     fn test_add_true_literal(literals: [Literal; 5]) {
         let [a, b, ..] = literals;
-        let mut kg = KnowledgeGraph::new();
+        let mut kg: KnowledgeGraph<DefaultComplexityFunction> = KnowledgeGraph::new();
         kg.add_true_literal(a.clone());
         kg.add_true_literal(b.clone());
         assert_eq!(kg.graph.node_count(), 2);
         assert_eq!(kg.graph.edge_count(), 0);
         assert_eq!(
-            kg.node_of(&a).unwrap(),
+            kg.class_of(&a).unwrap(),
             &[a.clone(), b.clone(), Literal::True].into()
         );
+        assert_eq!(kg.representative_of(&a).unwrap(), &Literal::True);
         assert_eq!(
-            kg.node_of(&a.clone().negated()).unwrap(),
+            kg.class_of(&a.clone().negated()).unwrap(),
             &[a.clone().negated(), b.clone().negated(), Literal::False].into()
+        );
+        assert_eq!(
+            kg.representative_of(&a.clone().negated()).unwrap(),
+            &Literal::False
         );
     }
 
@@ -297,14 +386,14 @@ mod tests {
 
         assert_eq!(condensed.graph.node_count(), 6);
         assert_eq!(
-            condensed.node_of(&a).unwrap(),
+            condensed.class_of(&a).unwrap(),
             &[a.clone(), b.clone(), c.clone().negated()].into()
         );
         assert_eq!(
-            condensed.node_of(&d).unwrap(),
+            condensed.class_of(&d).unwrap(),
             &[d.clone(), Literal::False].into()
         );
-        assert_eq!(condensed.node_of(&e).unwrap(), &[e.clone()].into());
+        assert_eq!(condensed.class_of(&e).unwrap(), &[e.clone()].into());
         assert_eq!(condensed.graph.edge_count(), 2 + 6);
         assert!(condensed
             .graph

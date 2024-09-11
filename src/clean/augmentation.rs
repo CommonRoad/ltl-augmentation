@@ -116,17 +116,12 @@ impl<'a> Augmenter<'a> {
             .flat_map(|interval| self.knowledge.interval_covering(interval))
         {
             let kg = self.knowledge.at(*interval.lb().unwrap());
-            let literal_node = kg.node_of(&Literal::Atom(ap.clone()));
-            let augmentation = if let Some(literal_node) = literal_node {
-                if literal_node.contains(&Literal::True) {
-                    NNFFormula::True
-                } else if literal_node.contains(&Literal::False) {
-                    NNFFormula::False
-                } else {
-                    literal.clone()
-                }
-            } else {
-                literal.clone()
+            let representative = kg.representative_of(&Literal::Atom(ap.clone()));
+            let augmentation = match representative {
+                Some(Literal::True) => NNFFormula::True,
+                Some(Literal::False) => NNFFormula::False,
+                Some(Literal::Atom(ap)) => NNFFormula::AP(ap.clone()),
+                None => literal.clone(),
             };
             aug_seq.set(&interval, Some(augmentation));
         }
