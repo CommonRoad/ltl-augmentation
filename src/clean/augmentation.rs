@@ -279,7 +279,9 @@ mod tests {
 
     use rstest::*;
 
-    use crate::clean::{formula::AtomicProposition, parser::mltl_parser};
+    use crate::clean::{
+        formula::AtomicProposition, parser::mltl_parser, trace_parser::trace_parser,
+    };
 
     use super::*;
 
@@ -381,101 +383,72 @@ mod tests {
         );
     }
 
-    // #[rstest]
-    // fn test_release(aps: [NNFFormula; 4]) {
-    //     let [a, b, c, d] = aps;
+    #[rstest]
+    fn test_example() {
+        let phi = mltl_parser::formula("G (omc_e & front & oar & (F omc_o) -> !(!rl & (F rl)))")
+            .expect("Syntax is correct")
+            .into();
 
-    //     let unknown_interval = Interval::bounded(0, 1);
+        let trace = trace_parser::trace(include_str!("../../example_trace.txt"))
+            .expect("Syntax is correct");
+        let knowledge = KnowledgeSequence::from(trace);
+        let mut augmenter = Augmenter::new(&phi, knowledge);
+        augmenter.augment();
+        let augmented = augmenter
+            .augmentation_sequences
+            .get(&phi)
+            .unwrap()
+            .at(0)
+            .as_ref()
+            .unwrap();
+        let expected = mltl_parser::formula("(G[0, 4] (F rl) -> rl) & (G[5, 7] front -> !(!rl & (F rl))) & (G[8, 15] omc_e & front -> !(!rl & (F rl))) & (G[16,*] omc_e & front & oar & (F omc_o) -> !(!rl & (F rl)))")
+            .expect("Syntax is correct")
+            .into();
+        println!("{}", augmented);
+        assert_eq!(augmented, &expected);
+    }
 
-    //     let mut rhs_simp = FormulaSequence::indicator(
-    //         &Interval::bounded(0, 2),
-    //         Some(a.clone()),
-    //         Some(NNFFormula::True),
-    //     );
-    //     rhs_simp.set(&Interval::bounded(3, 5), Some(b.clone()));
-    //     rhs_simp.set(&Interval::bounded(6, 10), Some(c.clone()));
+    #[rstest]
+    #[case("ri5")]
+    #[case("rg1")]
+    fn test_preaugmented(#[case] rule: &str) {
+        use std::fs;
 
-    //     let mut lhs_simp = FormulaSequence::indicator(
-    //         &Interval::bounded(4, 7),
-    //         Some(d.clone()),
-    //         Some(NNFFormula::False),
-    //     );
-    //     lhs_simp.set(&Interval::bounded(9, 12), Some(d.clone()));
+        let preaugmented_rule: NNFFormula = mltl_parser::formula(
+            fs::read_to_string(format!("{}.txt", rule).as_str())
+                .expect("File exists")
+                .as_str(),
+        )
+        .expect("Syntax is correct")
+        .into();
+        let naive_rule: NNFFormula = mltl_parser::formula(
+            fs::read_to_string(format!("{}_naive.txt", rule).as_str())
+                .expect("File exists")
+                .as_str(),
+        )
+        .expect("Syntax is correct")
+        .into();
+        let trace = trace_parser::trace(
+            fs::read_to_string(format!("trace_{}.txt", rule).as_str())
+                .expect("File exists")
+                .as_str(),
+        )
+        .expect("Syntax is correct");
+        let knowledge = KnowledgeSequence::from(trace);
 
-    //     let release_interval = Interval::bounded(0, 5);
+        let now = std::time::Instant::now();
+        let mut augmenter = Augmenter::new(&naive_rule, knowledge);
+        augmenter.augment();
+        let augmented = augmenter
+            .augmentation_sequences
+            .get(&naive_rule)
+            .unwrap()
+            .at(0)
+            .as_ref()
+            .unwrap();
+        println!("{:.2?}", now.elapsed());
 
-    //     let simp = Simplifier::get_release_simplification(
-    //         &unknown_interval,
-    //         &lhs_simp,
-    //         &release_interval,
-    //         &rhs_simp,
-    //     );
-    //     assert_eq!(
-    //         simp.at(0).as_ref().unwrap(),
-    //         &mltl_parser::formula(
-    //             "((b U[4, 5] b & d) & (G[0, 2] a) & (X[3] b)) | ((G[0, 2] a) & (G[3, 5] b))"
-    //         )
-    //         .unwrap()
-    //         .into()
-    //     );
-    //     assert_eq!(
-    //         simp.at(1).as_ref().unwrap(),
-    //         &mltl_parser::formula(
-    //             "((b U[3, 4] b & d) & (G[0, 1] a) & (X[2] b)) | ((G[0, 1] a) & (G[2, 4] b) & (X[5] c)) | ((G[0, 1] a) & (G[2, 4] b) & (X[5] c & d))"
-    //         )
-    //         .unwrap()
-    //         .into()
-    //     );
-    // }
-
-    // #[rstest]
-    // fn test_example() {
-    //     let phi = mltl_parser::formula("G (omc_e & front & oar & (F omc_o) -> !(!rl & (F rl)))")
-    //         .expect("Syntax is correct")
-    //         .into();
-    //     let trace =
-    //         trace_parser::trace(include_str!("../example_trace.txt")).expect("Syntax is correct");
-    //     let mut simplifier = Simplifier::new(&phi, &trace);
-    //     simplifier.simplify();
-    //     let simplified = simplifier.simplification_signals.get(&phi).unwrap().at(0);
-    //     println!("{}", simplified);
-    //     println!("{:?}", simplified.collect_aps_with_time());
-    // }
-
-    // #[rstest]
-    // #[case("ri5")]
-    // #[case("rg1")]
-    // fn test_presimplified(#[case] rule: &str) {
-    //     let presimplified_rule: NNFFormula<_> = mltl_parser::formula(
-    //         fs::read_to_string(format!("{}.txt", rule).as_str())
-    //             .expect("File exists")
-    //             .as_str(),
-    //     )
-    //     .expect("Syntax is correct")
-    //     .into();
-    //     let naive_rule: NNFFormula<_> = mltl_parser::formula(
-    //         fs::read_to_string(format!("{}_naive.txt", rule).as_str())
-    //             .expect("File exists")
-    //             .as_str(),
-    //     )
-    //     .expect("Syntax is correct")
-    //     .into();
-    //     let trace = trace_parser::trace(
-    //         fs::read_to_string(format!("trace_{}.txt", rule).as_str())
-    //             .expect("File exists")
-    //             .as_str(),
-    //     )
-    //     .expect("Syntax is correct");
-    //     let now = std::time::Instant::now();
-    //     let mut simplifier = Simplifier::new(&naive_rule, &trace);
-    //     simplifier.simplify();
-    //     let simplified = simplifier
-    //         .simplification_signals
-    //         .get(&naive_rule)
-    //         .unwrap()
-    //         .at(0);
-    //     println!("{:.2?}", now.elapsed());
-    //     // assert_eq!(&presimplified_rule, simplified);
-    //     println!("{}", simplified.clone().move_next_inwards());
-    // }
+        println!("{}", augmented);
+        assert_eq!(&preaugmented_rule, augmented);
+    }
 }
