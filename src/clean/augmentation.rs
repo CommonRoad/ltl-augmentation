@@ -7,6 +7,7 @@ use crate::clean::{
 };
 
 use super::{
+    knowledge_graph::Literal,
     sequence::{knowledge::KnowledgeSequence, NormalizedSequence, Sequence, Time},
     sets::{interval::Interval, interval_set::IntervalSet},
 };
@@ -88,23 +89,47 @@ impl<'a> Augmenter<'a> {
 
         // Compute the augmentation of this formula for all remaining relevant steps
         match formula {
-            NNFFormula::True | NNFFormula::False => self.augment_literal_trivial(formula),
-            NNFFormula::AP(..) => self.augment_literal(formula, &relevant_steps),
+            NNFFormula::True | NNFFormula::False => self.augment_trivial_literal(formula),
+            NNFFormula::AP(..) => self.augment_atomic_proposition(formula, &relevant_steps),
             _ => self.augment_compound(formula, &relevant_steps, &relevant_steps_subformulas),
         }
     }
 
-    fn augment_literal_trivial(&mut self, literal: &NNFFormula) {
+    fn augment_trivial_literal(&mut self, literal: &NNFFormula) {
         let aug_seq = self.get_subformula_augmentation_mut(literal);
         aug_seq.set(&Interval::unbounded(0), Some(literal.clone()));
     }
 
-    fn augment_literal(&mut self, literal: &NNFFormula, relevant_steps: &IntervalSet) {
-        let aug_seq = self.get_subformula_augmentation_mut(literal);
-        relevant_steps
+    fn augment_atomic_proposition(&mut self, literal: &NNFFormula, relevant_steps: &IntervalSet) {
+        // We cannot use get_subformula_augmentation_mut here, because this would borrow all of self as mutable
+        let aug_seq = self
+            .augmentation_sequences
+            .get_mut(literal)
+            .expect("Formula should have been inserted before");
+        let ap = match literal {
+            NNFFormula::AP(ap) => ap,
+            _ => unreachable!("This function is only called for atomic propositions"),
+        };
+        for interval in relevant_steps
             .get_intervals()
             .iter()
-            .for_each(|interval| aug_seq.set(interval, Some(literal.clone())))
+            .flat_map(|interval| self.knowledge.interval_covering(interval))
+        {
+            let kg = self.knowledge.at(*interval.lb().unwrap());
+            let literal_node = kg.node_of(&Literal::Atom(ap.clone()));
+            let augmentation = if let Some(literal_node) = literal_node {
+                if literal_node.contains(&Literal::True) {
+                    NNFFormula::True
+                } else if literal_node.contains(&Literal::False) {
+                    NNFFormula::False
+                } else {
+                    literal.clone()
+                }
+            } else {
+                literal.clone()
+            };
+            aug_seq.set(&interval, Some(augmentation));
+        }
     }
 
     fn augment_compound(
@@ -449,7 +474,7 @@ mod tests {
             .unwrap();
         println!("{:.2?}", now.elapsed());
 
-        println!("{}", augmented);
+        // println!("{}", augmented);
         assert_eq!(&preaugmented_rule, augmented);
     }
 }
