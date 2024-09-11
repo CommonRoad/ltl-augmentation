@@ -128,7 +128,7 @@ impl<'a> Augmenter<'a> {
             let aug_seq = self.get_subformula_augmentation_mut(formula);
             if step >= last_change_subformulas {
                 relevant_steps
-                    .intersect(&Interval::unbounded(0).into())
+                    .intersect(&Interval::unbounded(step).into())
                     .get_intervals()
                     .iter()
                     .for_each(|interval| aug_seq.set(interval, Some(augmentation.clone())));
