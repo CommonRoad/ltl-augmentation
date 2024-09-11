@@ -35,6 +35,7 @@ pub trait ComplexityFunction {
     fn complexity(literal: &Literal) -> u32;
 }
 
+#[derive(Debug, Clone)]
 pub struct DefaultComplexityFunction;
 
 impl ComplexityFunction for DefaultComplexityFunction {
@@ -125,15 +126,26 @@ impl<C: ComplexityFunction> KnowledgeGraph<C> {
     }
 
     pub fn class_of(&self, literal: &Literal) -> Option<&HashSet<Literal>> {
-        self.node_map
-            .get(literal)
-            .map(|idx| &self.graph[*idx].class)
+        Some(&self.equivalence_class_of(literal)?.class)
     }
 
     pub fn representative_of(&self, literal: &Literal) -> Option<&Literal> {
-        self.node_map
-            .get(literal)
-            .map(|idx| &self.graph[*idx].representative)
+        Some(&self.equivalence_class_of(literal)?.representative)
+    }
+
+    fn equivalence_class_of(&self, literal: &Literal) -> Option<&EquivalenceClass<C>> {
+        self.node_map.get(literal).map(|idx| &self.graph[*idx])
+    }
+
+    pub fn implying_representatives<'a>(&'a self, literal: &'a Literal) -> HashSet<&'a Literal> {
+        if let Some(idx) = self.node_map.get(literal) {
+            self.graph
+                .neighbors_directed(*idx, petgraph::Direction::Incoming)
+                .map(|neighbor| &self.graph[neighbor].representative)
+                .collect()
+        } else {
+            HashSet::from([literal])
+        }
     }
 
     pub fn add_true_literal(&mut self, literal: Literal) {
@@ -282,6 +294,13 @@ impl<C: ComplexityFunction> KnowledgeGraph<C> {
         } else {
             Kleene::Unknown
         }
+    }
+
+    pub fn dot(&self) -> String
+    where
+        C: std::fmt::Debug,
+    {
+        format!("{:?}", petgraph::dot::Dot::new(&self.graph))
     }
 }
 

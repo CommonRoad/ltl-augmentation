@@ -116,13 +116,15 @@ impl<'a> Augmenter<'a> {
             .flat_map(|interval| self.knowledge.interval_covering(interval))
         {
             let kg = self.knowledge.at(*interval.lb().unwrap());
-            let representative = kg.representative_of(&Literal::Atom(ap.clone()));
-            let augmentation = match representative {
-                Some(Literal::True) => NNFFormula::True,
-                Some(Literal::False) => NNFFormula::False,
-                Some(Literal::Atom(ap)) => NNFFormula::AP(ap.clone()),
-                None => literal.clone(),
-            };
+            let augmentation = NNFFormula::or(
+                kg.implying_representatives(&Literal::Atom(ap.clone()))
+                    .into_iter()
+                    .map(|l| match l {
+                        Literal::True => NNFFormula::True,
+                        Literal::False => NNFFormula::False,
+                        Literal::Atom(ap) => NNFFormula::AP(ap.clone()),
+                    }),
+            );
             aug_seq.set(&interval, Some(augmentation));
         }
     }
