@@ -55,6 +55,9 @@ impl<'a> Augmenter<'a> {
             .entry(formula)
             .or_insert(FormulaSequence::uniform(None));
 
+        let relevant_steps = relevant_steps.intersect(&IntervalSet::from_iter(
+            aug_seq.intervals_where(Option::is_none),
+        ));
         if relevant_steps.is_empty() {
             return;
         }
@@ -65,12 +68,18 @@ impl<'a> Augmenter<'a> {
             .satisfaction_signals()
             .get(formula)
             .expect("Monitor should contain all subformulas");
-        verdicts
-            .intervals_where_eq(&Kleene::True)
+        relevant_steps
+            .intersect(&IntervalSet::from_iter(
+                verdicts.intervals_where_eq(&Kleene::True),
+            ))
+            .get_intervals()
             .iter()
             .for_each(|true_interval| aug_seq.set(true_interval, Some(NNFFormula::True)));
-        verdicts
-            .intervals_where_eq(&Kleene::False)
+        relevant_steps
+            .intersect(&IntervalSet::from_iter(
+                verdicts.intervals_where_eq(&Kleene::False),
+            ))
+            .get_intervals()
             .iter()
             .for_each(|false_interval| aug_seq.set(false_interval, Some(NNFFormula::False)));
 
@@ -78,6 +87,9 @@ impl<'a> Augmenter<'a> {
         let relevant_steps = relevant_steps.intersect(&IntervalSet::from_iter(
             verdicts.intervals_where_eq(&Kleene::Unknown),
         ));
+        if relevant_steps.is_empty() {
+            return;
+        }
 
         // Augment all subformulas
         let relevant_steps_subformulas = relevant_steps.minkowski_sum(&formula.get_interval());
