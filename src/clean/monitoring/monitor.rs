@@ -2,14 +2,13 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 
+use super::Logical;
+use crate::clean::formula::nnf::NNFFormula;
 use crate::clean::{
-    formula::NNFFormula,
     sequence::{NormalizedSequence, Sequence},
     trace::Trace,
     truth_values::TruthValue,
 };
-
-use super::Logical;
 
 pub struct Monitor<'a, V> {
     root: &'a NNFFormula,
@@ -114,15 +113,14 @@ mod tests {
 
     use rstest::*;
 
+    use super::*;
+    use crate::clean::formula::parser::mltl_parser;
     use crate::clean::{
         monitoring::{boolean::BooleanMonitorSequence, kleene::KleeneMonitorSequence},
-        parser::mltl_parser,
         sequence::boolean::BooleanSequence,
         sets::interval::Interval,
         truth_values::Kleene,
     };
-
-    use super::*;
 
     #[fixture]
     fn phi() -> NNFFormula {

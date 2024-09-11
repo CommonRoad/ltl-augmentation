@@ -8,7 +8,7 @@ use crate::clean::{
 };
 
 peg::parser! {
-    pub grammar trace_parser() for str {
+    pub grammar kleene_trace_parser() for str {
         pub rule trace() -> Trace<Kleene>
             = aps:atomic_propositions() "\n" time_steps:time_steps() _ {?
                 if time_steps.iter().all(|ts| ts.len() == aps.len()) {
@@ -54,7 +54,7 @@ mod tests {
 
     #[rstest]
     fn test_parser() {
-        let trace = trace_parser::trace("a b c\nT F U\nT F F\n").unwrap();
+        let trace = kleene_trace_parser::trace("a b c\nT F U\nT F F\n").unwrap();
         assert_eq!(
             trace,
             Trace::from(HashMap::from_iter([

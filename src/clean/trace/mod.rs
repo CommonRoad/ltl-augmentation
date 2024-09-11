@@ -2,6 +2,8 @@ use std::{collections::HashMap, rc::Rc};
 
 use super::sequence::NormalizedSequence;
 
+pub mod parser;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trace<V>(HashMap<Rc<str>, NormalizedSequence<V>>);
 

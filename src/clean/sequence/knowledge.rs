@@ -1,14 +1,14 @@
 use std::{collections::HashSet, rc::Rc};
 
+use super::{NormalizedSequence, Sequence};
+use crate::clean::formula::atomic_proposition::AtomicProposition;
+use crate::clean::formula::literal::Literal;
 use crate::clean::{
-    formula::AtomicProposition,
-    knowledge_graph::{KnowledgeGraph, KnowledgeGraphEdge, Literal},
+    knowledge_graph::{KnowledgeGraph, KnowledgeGraphEdge},
     sequence::PlainSequence,
     trace::Trace,
     truth_values::Kleene,
 };
-
-use super::{NormalizedSequence, Sequence};
 
 pub type KnowledgeSequence = PlainSequence<KnowledgeGraph>;
 

@@ -1,9 +1,8 @@
 use std::rc::Rc;
 
-use crate::clean::{
-    formula::{AtomicProposition, Formula},
-    sets::interval::Interval,
-};
+use crate::clean::formula::atomic_proposition::AtomicProposition;
+use crate::clean::formula::ltl::Formula;
+use crate::clean::sets::interval::Interval;
 
 peg::parser! {
     pub grammar mltl_parser() for str {

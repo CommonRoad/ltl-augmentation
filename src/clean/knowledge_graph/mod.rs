@@ -3,110 +3,19 @@ use std::{
     rc::Rc,
 };
 
+use crate::clean::formula::atomic_proposition::AtomicProposition;
+use crate::clean::formula::literal::Literal;
+use crate::clean::truth_values::Kleene;
+use complexity_functions::{ComplexityFunction, DefaultComplexityFunction};
+use equivalence_class::EquivalenceClass;
 use itertools::iproduct;
 use petgraph::{
     algo::{condensation, floyd_warshall},
     graph::{DiGraph, NodeIndex},
 };
 
-use crate::clean::{formula::AtomicProposition, truth_values::Kleene};
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Literal {
-    True,
-    False,
-    Atom(AtomicProposition),
-}
-
-impl Literal {
-    pub fn negated(self) -> Self {
-        match self {
-            Literal::True => Literal::False,
-            Literal::False => Literal::True,
-            Literal::Atom(ap) => Literal::Atom(AtomicProposition {
-                name: ap.name,
-                negated: !ap.negated,
-            }),
-        }
-    }
-}
-
-pub trait ComplexityFunction {
-    fn complexity(literal: &Literal) -> u32;
-}
-
-#[derive(Debug, Clone)]
-pub struct DefaultComplexityFunction;
-
-impl ComplexityFunction for DefaultComplexityFunction {
-    fn complexity(literal: &Literal) -> u32 {
-        match literal {
-            Literal::True => 0,
-            Literal::False => 0,
-            Literal::Atom(_) => 1,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct EquivalenceClass<C> {
-    class: HashSet<Literal>,
-    representative: Literal,
-    representative_complexity: u32,
-    complexity_function: std::marker::PhantomData<C>,
-}
-
-impl<C: ComplexityFunction> EquivalenceClass<C> {
-    fn insert(&mut self, literal: Literal) {
-        let new_complexity = C::complexity(&literal);
-        if new_complexity < self.representative_complexity {
-            self.representative = literal.clone();
-            self.representative_complexity = new_complexity;
-        }
-        self.class.insert(literal);
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &Literal> {
-        self.class.iter()
-    }
-
-    fn extend(&mut self, other: Self) {
-        self.class.extend(other.class);
-        if other.representative_complexity < self.representative_complexity {
-            self.representative = other.representative;
-            self.representative_complexity = other.representative_complexity;
-        }
-    }
-}
-
-impl<C: ComplexityFunction> From<Literal> for EquivalenceClass<C> {
-    fn from(literal: Literal) -> Self {
-        EquivalenceClass {
-            representative_complexity: C::complexity(&literal),
-            representative: literal.clone(),
-            class: [literal].into(),
-            complexity_function: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<C: ComplexityFunction> TryFrom<HashSet<Literal>> for EquivalenceClass<C> {
-    type Error = ();
-
-    fn try_from(value: HashSet<Literal>) -> Result<Self, Self::Error> {
-        let representative = value
-            .iter()
-            .min_by_key(|literal| C::complexity(literal))
-            .ok_or(())?
-            .clone();
-        Ok(EquivalenceClass {
-            representative_complexity: C::complexity(&representative),
-            representative,
-            class: value,
-            complexity_function: std::marker::PhantomData,
-        })
-    }
-}
+pub mod complexity_functions;
+mod equivalence_class;
 
 #[derive(Debug, Clone)]
 pub struct KnowledgeGraph<C = DefaultComplexityFunction> {

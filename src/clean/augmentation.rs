@@ -1,15 +1,14 @@
 use std::collections::{BTreeSet, HashMap};
 
-use crate::clean::{
-    formula::NNFFormula,
-    monitoring::{kleene::KleeneMonitorSequence, monitor::Monitor},
-    truth_values::Kleene,
-};
-
 use super::{
-    knowledge_graph::Literal,
     sequence::{knowledge::KnowledgeSequence, NormalizedSequence, Sequence, Time},
     sets::{interval::Interval, interval_set::IntervalSet},
+};
+use crate::clean::formula::literal::Literal;
+use crate::clean::formula::nnf::NNFFormula;
+use crate::clean::{
+    monitoring::{kleene::KleeneMonitorSequence, monitor::Monitor},
+    truth_values::Kleene,
 };
 
 type FormulaSequence = NormalizedSequence<Option<NNFFormula>>;
@@ -302,11 +301,10 @@ mod tests {
 
     use rstest::*;
 
-    use crate::clean::{
-        formula::AtomicProposition, parser::mltl_parser, trace_parser::trace_parser,
-    };
-
     use super::*;
+    use crate::clean::formula::atomic_proposition::AtomicProposition;
+    use crate::clean::formula::parser::mltl_parser;
+    use crate::clean::trace::parser::kleene_trace_parser;
 
     #[fixture]
     fn aps() -> [NNFFormula; 4] {
@@ -412,7 +410,7 @@ mod tests {
             .expect("Syntax is correct")
             .into();
 
-        let trace = trace_parser::trace(include_str!("../../example_trace.txt"))
+        let trace = kleene_trace_parser::trace(include_str!("../../example_trace.txt"))
             .expect("Syntax is correct");
         let knowledge = KnowledgeSequence::from(trace);
         let mut augmenter = Augmenter::new(&phi, knowledge);
@@ -451,7 +449,7 @@ mod tests {
         )
         .expect("Syntax is correct")
         .into();
-        let trace = trace_parser::trace(
+        let trace = kleene_trace_parser::trace(
             fs::read_to_string(format!("trace_{}.txt", rule).as_str())
                 .expect("File exists")
                 .as_str(),
