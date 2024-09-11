@@ -6,4 +6,5 @@ pub mod parser;
 pub mod sequence;
 pub mod sets;
 pub mod trace;
+pub mod trace_parser;
 pub mod truth_values;

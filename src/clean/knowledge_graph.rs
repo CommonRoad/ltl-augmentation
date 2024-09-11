@@ -207,38 +207,39 @@ impl Default for KnowledgeGraph {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum KnowledgeGraphEdge {
+    IsTrue(Literal),
+    IsFalse(Literal),
+    Implication(Literal, Literal),
+    Equivalence(Literal, Literal),
+}
+
+impl FromIterator<KnowledgeGraphEdge> for KnowledgeGraph {
+    fn from_iter<T: IntoIterator<Item = KnowledgeGraphEdge>>(iter: T) -> Self {
+        let mut kg = KnowledgeGraph::new();
+        for edge in iter {
+            match edge {
+                KnowledgeGraphEdge::IsTrue(literal) => kg.add_true_literal(literal),
+                KnowledgeGraphEdge::IsFalse(literal) => kg.add_false_literal(literal),
+                KnowledgeGraphEdge::Implication(precondition, consequence) => {
+                    kg.add_implication(precondition, consequence)
+                }
+                KnowledgeGraphEdge::Equivalence(lhs, rhs) => kg.add_equivalence(lhs, rhs),
+            }
+        }
+        kg
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_add_true_literal() {
-        let mut kg = KnowledgeGraph::new();
-        let a = Literal::Atom(AtomicProposition {
-            name: Rc::from("a"),
-            negated: false,
-        });
-        let b = Literal::Atom(AtomicProposition {
-            name: Rc::from("b"),
-            negated: false,
-        });
-        kg.add_true_literal(a.clone());
-        kg.add_true_literal(b.clone());
-        assert_eq!(kg.graph.node_count(), 2);
-        assert_eq!(kg.graph.edge_count(), 0);
-        assert_eq!(
-            kg.node_of(&a).unwrap(),
-            &[a.clone(), b.clone(), Literal::True].into()
-        );
-        assert_eq!(
-            kg.node_of(&a.clone().negated()).unwrap(),
-            &[a.clone().negated(), b.clone().negated(), Literal::False].into()
-        );
-    }
+    use rstest::*;
 
-    #[test]
-    fn test_condense_graph() {
-        let mut kg = KnowledgeGraph::new();
+    #[fixture]
+    fn literals() -> [Literal; 5] {
         let a = Literal::Atom(AtomicProposition {
             name: Rc::from("a"),
             negated: false,
@@ -259,17 +260,37 @@ mod tests {
             name: Rc::from("e"),
             negated: false,
         });
-        kg.add_literal_if_not_exists(a.clone());
-        kg.add_literal_if_not_exists(b.clone());
-        kg.add_literal_if_not_exists(c.clone());
-        kg.add_literal_if_not_exists(d.clone());
-        kg.add_literal_if_not_exists(e.clone());
+        [a, b, c, d, e]
+    }
 
-        kg.add_implication(a.clone(), b.clone());
-        kg.add_implication(b.clone(), c.clone().negated());
-        kg.add_implication(a.clone().negated(), c.clone());
-        kg.add_implication(d.clone(), Literal::False);
-        kg.add_implication(e.clone(), b.clone());
+    #[rstest]
+    fn test_add_true_literal(literals: [Literal; 5]) {
+        let [a, b, ..] = literals;
+        let mut kg = KnowledgeGraph::new();
+        kg.add_true_literal(a.clone());
+        kg.add_true_literal(b.clone());
+        assert_eq!(kg.graph.node_count(), 2);
+        assert_eq!(kg.graph.edge_count(), 0);
+        assert_eq!(
+            kg.node_of(&a).unwrap(),
+            &[a.clone(), b.clone(), Literal::True].into()
+        );
+        assert_eq!(
+            kg.node_of(&a.clone().negated()).unwrap(),
+            &[a.clone().negated(), b.clone().negated(), Literal::False].into()
+        );
+    }
+
+    #[rstest]
+    fn test_condense_graph(literals: [Literal; 5]) {
+        let [a, b, c, d, e] = literals;
+        let kg = KnowledgeGraph::from_iter([
+            KnowledgeGraphEdge::Implication(a.clone(), b.clone()),
+            KnowledgeGraphEdge::Implication(b.clone(), c.clone().negated()),
+            KnowledgeGraphEdge::Implication(a.clone().negated(), c.clone()),
+            KnowledgeGraphEdge::Implication(d.clone(), Literal::False),
+            KnowledgeGraphEdge::Implication(e.clone(), b.clone()),
+        ]);
 
         let mut condensed = kg.condense_graph();
         condensed.complete_graph();
