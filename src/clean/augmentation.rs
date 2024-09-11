@@ -50,11 +50,29 @@ impl<'a> Augmenter<'a> {
     }
 
     fn augment_rec(&mut self, formula: &'a NNFFormula, relevant_steps: &IntervalSet) {
-        let aug_seq = self
-            .augmentation_sequences
-            .entry(formula)
-            .or_insert(FormulaSequence::uniform(None));
+        if !self.augmentation_sequences.contains_key(formula) {
+            self.augmentation_sequences
+                .insert(formula, FormulaSequence::uniform(None));
 
+            // Write the monitoring result to the augmentation sequence
+            let aug_seq = self.augmentation_sequences.get_mut(formula).unwrap();
+            let verdicts = self
+                .monitor
+                .satisfaction_signals()
+                .get(formula)
+                .expect("Monitor should contain all subformulas");
+            verdicts
+                .intervals_where_eq(&Kleene::True)
+                .iter()
+                .for_each(|true_interval| aug_seq.set(true_interval, Some(NNFFormula::True)));
+            verdicts
+                .intervals_where_eq(&Kleene::False)
+                .iter()
+                .for_each(|false_interval| aug_seq.set(false_interval, Some(NNFFormula::False)));
+        }
+
+        // Update the relevant steps: we only need a value where we don't already have one
+        let aug_seq = self.augmentation_sequences.get(&formula).unwrap();
         let relevant_steps = relevant_steps.intersect(&IntervalSet::from_iter(
             aug_seq.intervals_where(Option::is_none),
         ));
@@ -62,40 +80,11 @@ impl<'a> Augmenter<'a> {
             return;
         }
 
-        // Check the monitor result
-        let verdicts = self
-            .monitor
-            .satisfaction_signals()
-            .get(formula)
-            .expect("Monitor should contain all subformulas");
-        relevant_steps
-            .intersect(&IntervalSet::from_iter(
-                verdicts.intervals_where_eq(&Kleene::True),
-            ))
-            .get_intervals()
-            .iter()
-            .for_each(|true_interval| aug_seq.set(true_interval, Some(NNFFormula::True)));
-        relevant_steps
-            .intersect(&IntervalSet::from_iter(
-                verdicts.intervals_where_eq(&Kleene::False),
-            ))
-            .get_intervals()
-            .iter()
-            .for_each(|false_interval| aug_seq.set(false_interval, Some(NNFFormula::False)));
-
-        // Update the relevant steps: where the monitor did not return unknown, we no longer need a value
-        let relevant_steps = relevant_steps.intersect(&IntervalSet::from_iter(
-            verdicts.intervals_where_eq(&Kleene::Unknown),
-        ));
-        if relevant_steps.is_empty() {
-            return;
-        }
-
         // Augment all subformulas
         let relevant_steps_subformulas = relevant_steps.minkowski_sum(&formula.get_interval());
-        formula
-            .iter_subformulas()
-            .for_each(|sub| self.augment_rec(sub, &relevant_steps_subformulas));
+        for subformula in formula.iter_subformulas() {
+            self.augment_rec(subformula, &relevant_steps_subformulas)
+        }
 
         // Compute the augmentation of this formula for all remaining relevant steps
         match formula {
