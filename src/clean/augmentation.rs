@@ -89,7 +89,7 @@ impl<'a> Augmenter<'a> {
         match formula {
             NNFFormula::True | NNFFormula::False => self.augment_literal_trivial(formula),
             NNFFormula::AP(..) => self.augment_literal(formula, &relevant_steps),
-            _ => self.augment_compound(formula, &relevant_steps),
+            _ => self.augment_compound(formula, &relevant_steps, &relevant_steps_subformulas),
         }
     }
 
@@ -106,9 +106,14 @@ impl<'a> Augmenter<'a> {
             .for_each(|interval| aug_seq.set(interval, Some(literal.clone())))
     }
 
-    fn augment_compound(&mut self, formula: &NNFFormula, relevant_steps: &IntervalSet) {
+    fn augment_compound(
+        &mut self,
+        formula: &NNFFormula,
+        relevant_steps: &IntervalSet,
+        relevant_steps_subformulas: &IntervalSet,
+    ) {
         let last_change_subformulas = self
-            .get_last_change_of_subformulas(formula, relevant_steps)
+            .get_last_change_of_subformulas(formula, relevant_steps_subformulas)
             .expect("Compound formula should have at least one subformula");
 
         for step in relevant_steps
