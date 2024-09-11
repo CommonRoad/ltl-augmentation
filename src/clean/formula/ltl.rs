@@ -1,4 +1,5 @@
 use crate::clean::formula::atomic_proposition::AtomicProposition;
+use crate::clean::formula::literal::Literal;
 use crate::clean::formula::nnf::NNFFormula;
 use crate::clean::sequence::Time;
 use crate::clean::sets::interval::Interval;
@@ -118,9 +119,9 @@ impl Display for Formula {
 impl From<NNFFormula> for Formula {
     fn from(formula: NNFFormula) -> Self {
         match formula {
-            NNFFormula::AP(ap) => Formula::AP(ap),
-            NNFFormula::True => Formula::True,
-            NNFFormula::False => Formula::False,
+            NNFFormula::Literal(Literal::Atom(ap)) => Formula::AP(ap),
+            NNFFormula::Literal(Literal::True) => Formula::True,
+            NNFFormula::Literal(Literal::False) => Formula::False,
 
             NNFFormula::And(subs) => Formula::and(subs.into_iter().map(|f| f.into())),
             NNFFormula::Or(subs) => Formula::or(subs.into_iter().map(|f| f.into())),

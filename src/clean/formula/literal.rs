@@ -1,6 +1,7 @@
 use crate::clean::formula::atomic_proposition::AtomicProposition;
+use std::fmt::{Display, Formatter};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Literal {
     True,
     False,
@@ -16,6 +17,16 @@ impl Literal {
                 name: ap.name,
                 negated: !ap.negated,
             }),
+        }
+    }
+}
+
+impl Display for Literal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Literal::True => write!(f, "⊤"),
+            Literal::False => write!(f, "⊥"),
+            Literal::Atom(ap) => write!(f, "{}", ap),
         }
     }
 }

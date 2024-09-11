@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use itertools::Itertools;
 
 use super::Logical;
+use crate::clean::formula::literal::Literal;
 use crate::clean::formula::nnf::NNFFormula;
 use crate::clean::{
     sequence::{NormalizedSequence, Sequence},
@@ -64,9 +65,9 @@ impl<'a, V: TruthValue + Eq + Clone> Monitor<'a, V> {
             return;
         }
         let logical_signal = match formula {
-            NNFFormula::True => NormalizedSequence::uniform(V::top()).into(),
-            NNFFormula::False => NormalizedSequence::uniform(V::bot()).into(),
-            NNFFormula::AP(ap) => {
+            NNFFormula::Literal(Literal::True) => NormalizedSequence::uniform(V::top()).into(),
+            NNFFormula::Literal(Literal::False) => NormalizedSequence::uniform(V::bot()).into(),
+            NNFFormula::Literal(Literal::Atom(ap)) => {
                 let signal = trace.get_ap_sequence(ap.name.as_ref()).unwrap();
                 if ap.negated {
                     L::from(signal.clone()).negation()

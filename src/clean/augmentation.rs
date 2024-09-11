@@ -64,11 +64,15 @@ impl<'a> Augmenter<'a> {
             verdicts
                 .intervals_where_eq(&Kleene::True)
                 .iter()
-                .for_each(|true_interval| aug_seq.set(true_interval, Some(NNFFormula::True)));
+                .for_each(|true_interval| {
+                    aug_seq.set(true_interval, Some(NNFFormula::true_literal()))
+                });
             verdicts
                 .intervals_where_eq(&Kleene::False)
                 .iter()
-                .for_each(|false_interval| aug_seq.set(false_interval, Some(NNFFormula::False)));
+                .for_each(|false_interval| {
+                    aug_seq.set(false_interval, Some(NNFFormula::false_literal()))
+                });
         }
 
         // Update the relevant steps: we only need a value where we don't already have one
@@ -88,27 +92,34 @@ impl<'a> Augmenter<'a> {
 
         // Compute the augmentation of this formula for all remaining relevant steps
         match formula {
-            NNFFormula::True | NNFFormula::False => self.augment_trivial_literal(formula),
-            NNFFormula::AP(..) => self.augment_atomic_proposition(formula, &relevant_steps),
+            NNFFormula::Literal(..) => self.augment_literal(formula, &relevant_steps),
             _ => self.augment_compound(formula, &relevant_steps, &relevant_steps_subformulas),
         }
     }
 
-    fn augment_trivial_literal(&mut self, literal: &NNFFormula) {
-        let aug_seq = self.get_subformula_augmentation_mut(literal);
-        aug_seq.set(&Interval::unbounded(0), Some(literal.clone()));
+    fn augment_literal(&mut self, formula: &NNFFormula, relevant_steps: &IntervalSet) {
+        match formula {
+            NNFFormula::Literal(Literal::True) | NNFFormula::Literal(Literal::False) => self
+                .get_subformula_augmentation_mut(formula)
+                .set(&Interval::unbounded(0), Some(formula.clone())),
+            NNFFormula::Literal(literal @ Literal::Atom(..)) => {
+                self.augment_atomic_proposition(formula, literal, relevant_steps)
+            }
+            _ => unreachable!("This function is only called for literals"),
+        }
     }
 
-    fn augment_atomic_proposition(&mut self, literal: &NNFFormula, relevant_steps: &IntervalSet) {
+    fn augment_atomic_proposition(
+        &mut self,
+        formula: &NNFFormula,
+        literal: &Literal,
+        relevant_steps: &IntervalSet,
+    ) {
         // We cannot use get_subformula_augmentation_mut here, because this would borrow all of self as mutable
         let aug_seq = self
             .augmentation_sequences
-            .get_mut(literal)
+            .get_mut(formula)
             .expect("Formula should have been inserted before");
-        let ap = match literal {
-            NNFFormula::AP(ap) => ap,
-            _ => unreachable!("This function is only called for atomic propositions"),
-        };
         for interval in relevant_steps
             .get_intervals()
             .iter()
@@ -116,13 +127,9 @@ impl<'a> Augmenter<'a> {
         {
             let kg = self.knowledge.at(*interval.lb().unwrap());
             let augmentation = NNFFormula::or(
-                kg.implying_representatives(&Literal::Atom(ap.clone()))
+                kg.implying_representatives(literal)
                     .into_iter()
-                    .map(|l| match l {
-                        Literal::True => NNFFormula::True,
-                        Literal::False => NNFFormula::False,
-                        Literal::Atom(ap) => NNFFormula::AP(ap.clone()),
-                    }),
+                    .map(|l| NNFFormula::Literal(l.clone())),
             );
             aug_seq.set(&interval, Some(augmentation));
         }
@@ -308,22 +315,22 @@ mod tests {
 
     #[fixture]
     fn aps() -> [NNFFormula; 4] {
-        let a = NNFFormula::AP(AtomicProposition {
+        let a = NNFFormula::Literal(Literal::Atom(AtomicProposition {
             name: Rc::from("a"),
             negated: false,
-        });
-        let b = NNFFormula::AP(AtomicProposition {
+        }));
+        let b = NNFFormula::Literal(Literal::Atom(AtomicProposition {
             name: Rc::from("b"),
             negated: false,
-        });
-        let c = NNFFormula::AP(AtomicProposition {
+        }));
+        let c = NNFFormula::Literal(Literal::Atom(AtomicProposition {
             name: Rc::from("c"),
             negated: false,
-        });
-        let d = NNFFormula::AP(AtomicProposition {
+        }));
+        let d = NNFFormula::Literal(Literal::Atom(AtomicProposition {
             name: Rc::from("d"),
             negated: false,
-        });
+        }));
         [a, b, c, d]
     }
 
@@ -334,7 +341,7 @@ mod tests {
         let mut lhs_simp = FormulaSequence::indicator(
             &Interval::bounded(0, 2),
             Some(a.clone()),
-            Some(NNFFormula::False),
+            Some(NNFFormula::false_literal()),
         );
         lhs_simp.set(&Interval::bounded(3, 5), Some(b.clone()));
         lhs_simp.set(&Interval::bounded(6, 10), Some(c.clone()));
@@ -342,7 +349,7 @@ mod tests {
         let mut rhs_simp = FormulaSequence::indicator(
             &Interval::bounded(4, 7),
             Some(d.clone()),
-            Some(NNFFormula::False),
+            Some(NNFFormula::false_literal()),
         );
         rhs_simp.set(&Interval::bounded(9, 12), Some(d.clone()));
 
@@ -373,7 +380,7 @@ mod tests {
         let mut sub_simp = FormulaSequence::indicator(
             &Interval::bounded(0, 1),
             Some(a.clone()),
-            Some(NNFFormula::True),
+            Some(NNFFormula::true_literal()),
         );
         sub_simp.set(&Interval::bounded(3, 5), Some(b.clone()));
         sub_simp.set(&Interval::bounded(6, 10), Some(c.clone()));

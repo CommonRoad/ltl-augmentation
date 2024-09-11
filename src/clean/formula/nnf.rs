@@ -1,4 +1,5 @@
 use crate::clean::formula::atomic_proposition::AtomicProposition;
+use crate::clean::formula::literal::Literal;
 use crate::clean::formula::ltl::Formula;
 use crate::clean::sequence::Time;
 use crate::clean::sets::interval::Interval;
@@ -9,10 +10,8 @@ use termtree::Tree;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NNFFormula {
-    // atomic proposition + constants
-    AP(AtomicProposition),
-    True,
-    False,
+    // literals
+    Literal(Literal),
 
     // propositional connectives
     And(BTreeSet<NNFFormula>),
@@ -24,22 +23,34 @@ pub enum NNFFormula {
 }
 
 impl NNFFormula {
+    pub fn is_literal(&self) -> bool {
+        matches!(self, NNFFormula::Literal(..))
+    }
+
+    pub fn is_true(&self) -> bool {
+        matches!(self, NNFFormula::Literal(Literal::True))
+    }
+
+    pub fn is_false(&self) -> bool {
+        matches!(self, NNFFormula::Literal(Literal::False))
+    }
+
+    pub fn is_next(&self) -> bool {
+        matches!(self, NNFFormula::Globally(int, _) if int.is_singleton())
+    }
+
     pub fn get_interval(&self) -> Interval {
         match self {
-            NNFFormula::True
-            | NNFFormula::False
-            | NNFFormula::AP(..)
-            | NNFFormula::And(..)
-            | NNFFormula::Or(..) => Interval::singleton(0),
+            NNFFormula::Literal(..) | NNFFormula::And(..) | NNFFormula::Or(..) => {
+                Interval::singleton(0)
+            }
             NNFFormula::Until(_, interval, _) | NNFFormula::Globally(interval, _) => *interval,
         }
     }
 
     pub fn iter_subformulas(&self) -> Box<dyn Iterator<Item = &NNFFormula> + '_> {
         match self {
-            NNFFormula::True | NNFFormula::False | NNFFormula::AP(..) => {
-                Box::new(std::iter::empty())
-            }
+            NNFFormula::Literal(..) => Box::new(std::iter::empty()),
             NNFFormula::And(subs) | NNFFormula::Or(subs) => Box::new(subs.iter()),
             NNFFormula::Until(lhs, _, rhs) => {
                 Box::new(std::iter::once(lhs.as_ref()).chain(std::iter::once(rhs.as_ref())))
@@ -50,14 +61,7 @@ impl NNFFormula {
 
     pub fn negated(self) -> Self {
         match self {
-            NNFFormula::AP(AtomicProposition { name, negated }) => {
-                NNFFormula::AP(AtomicProposition {
-                    name,
-                    negated: !negated,
-                })
-            }
-            NNFFormula::True => NNFFormula::False,
-            NNFFormula::False => NNFFormula::True,
+            NNFFormula::Literal(literal) => NNFFormula::Literal(literal.negated()),
             NNFFormula::And(subs) => NNFFormula::or(subs.into_iter().map(|f| f.negated())),
             NNFFormula::Or(subs) => NNFFormula::and(subs.into_iter().map(|f| f.negated())),
             NNFFormula::Until(lhs, int, rhs) => {
@@ -67,19 +71,27 @@ impl NNFFormula {
         }
     }
 
+    pub fn true_literal() -> Self {
+        NNFFormula::Literal(Literal::True)
+    }
+
+    pub fn false_literal() -> Self {
+        NNFFormula::Literal(Literal::False)
+    }
+
     pub fn and(subs: impl IntoIterator<Item = Self>) -> Self {
         let mut subs: BTreeSet<_> = subs
             .into_iter()
-            .filter(|f| !matches!(f, NNFFormula::True))
+            .filter(|f| !f.is_true())
             .flat_map(|f| match f {
                 NNFFormula::And(subs) => subs,
                 f => [f].into(),
             })
             .collect();
         match subs.len() {
-            0 => NNFFormula::True,
+            0 => NNFFormula::true_literal(),
             1 => subs.pop_first().expect("Length is 1"),
-            _ if subs.iter().any(|f| matches!(f, NNFFormula::False)) => NNFFormula::False,
+            _ if subs.iter().any(NNFFormula::is_false) => NNFFormula::false_literal(),
             _ => NNFFormula::And(subs),
         }
     }
@@ -87,40 +99,40 @@ impl NNFFormula {
     pub fn or(subs: impl IntoIterator<Item = Self>) -> Self {
         let mut subs: BTreeSet<_> = subs
             .into_iter()
-            .filter(|f| !matches!(f, NNFFormula::False))
+            .filter(|f| !f.is_false())
             .flat_map(|f| match f {
                 NNFFormula::Or(subs) => subs,
                 f => [f].into(),
             })
             .collect();
         match subs.len() {
-            0 => NNFFormula::False,
+            0 => NNFFormula::false_literal(),
             1 => subs.pop_first().expect("Length is 1"),
-            _ if subs.iter().any(|f| matches!(f, NNFFormula::True)) => NNFFormula::True,
+            _ if subs.iter().any(NNFFormula::is_true) => NNFFormula::true_literal(),
             _ => NNFFormula::Or(subs),
         }
     }
 
     pub fn until(lhs: Self, int: Interval, rhs: Self) -> Self {
-        if matches!(rhs, NNFFormula::False) || int.is_empty() {
-            return NNFFormula::False;
+        if rhs.is_false() || int.is_empty() {
+            return NNFFormula::false_literal();
         }
-        if matches!(rhs, NNFFormula::True) {
+        if rhs.is_true() {
             // Due to MLTL semantics for U[a, b]: rhs always holds directly at a, so lhs is never required
-            return NNFFormula::True;
+            return NNFFormula::true_literal();
         }
-        if matches!(lhs, NNFFormula::False) || int.is_singleton() {
+        if lhs.is_false() || int.is_singleton() {
             return NNFFormula::next(*int.lb().expect("interval should not be empty"), rhs);
         }
         NNFFormula::Until(Box::new(lhs), int, Box::new(rhs))
     }
 
     pub fn globally(int: Interval, sub: Self) -> Self {
-        if matches!(sub, NNFFormula::True) || int.is_empty() {
-            return NNFFormula::True;
+        if sub.is_true() || int.is_empty() {
+            return NNFFormula::true_literal();
         }
-        if matches!(sub, NNFFormula::False) {
-            return NNFFormula::False;
+        if sub.is_false() {
+            return NNFFormula::false_literal();
         }
         if int == Interval::singleton(0) {
             return sub;
@@ -129,15 +141,15 @@ impl NNFFormula {
     }
 
     pub fn release(lhs: Self, int: Interval, rhs: Self) -> Self {
-        if matches!(rhs, NNFFormula::False) {
+        if rhs.is_false() {
             // This requires false to hold in the current state, which is impossible
-            return NNFFormula::False;
+            return NNFFormula::false_literal();
         }
-        if matches!(rhs, NNFFormula::True) | int.is_empty() {
+        if rhs.is_true() | int.is_empty() {
             // Due to MLTL semantics, rhs only needs to hold within the interval
-            return NNFFormula::True;
+            return NNFFormula::true_literal();
         }
-        if matches!(lhs, NNFFormula::True) || int.is_singleton() {
+        if lhs.is_true() || int.is_singleton() {
             return NNFFormula::next(*int.lb().expect("interval should not be empty"), rhs);
         }
         NNFFormula::or([
@@ -147,7 +159,7 @@ impl NNFFormula {
     }
 
     pub fn finally(int: Interval, sub: Self) -> Self {
-        NNFFormula::until(NNFFormula::True, int, sub)
+        NNFFormula::until(NNFFormula::true_literal(), int, sub)
     }
 
     pub fn next(time: Time, sub: Self) -> Self {
@@ -158,14 +170,12 @@ impl NNFFormula {
         }
     }
 
-    pub fn is_next(&self) -> bool {
-        matches!(self, NNFFormula::Globally(int, _) if int.is_singleton())
-    }
-
     pub fn collect_aps(&self) -> HashSet<AtomicProposition> {
         match self {
-            NNFFormula::True | NNFFormula::False => HashSet::new(),
-            NNFFormula::AP(ap) => HashSet::from([ap.clone()]),
+            NNFFormula::Literal(Literal::True) | NNFFormula::Literal(Literal::False) => {
+                HashSet::new()
+            }
+            NNFFormula::Literal(Literal::Atom(ap)) => HashSet::from([ap.clone()]),
             NNFFormula::And(subs) | NNFFormula::Or(subs) => subs
                 .iter()
                 .map(|f| f.collect_aps())
@@ -195,8 +205,8 @@ impl NNFFormula {
         map: &mut HashMap<AtomicProposition, IntervalSet>,
     ) {
         match self {
-            NNFFormula::True | NNFFormula::False => {}
-            NNFFormula::AP(ap) => {
+            NNFFormula::Literal(Literal::True) | NNFFormula::Literal(Literal::False) => {}
+            NNFFormula::Literal(Literal::Atom(ap)) => {
                 map.entry(ap.clone()).or_default().add(interval);
             }
             NNFFormula::And(subs) | NNFFormula::Or(subs) => {
@@ -219,9 +229,9 @@ impl NNFFormula {
 impl From<Formula> for NNFFormula {
     fn from(formula: Formula) -> Self {
         match formula {
-            Formula::AP(ap) => NNFFormula::AP(ap),
-            Formula::True => NNFFormula::True,
-            Formula::False => NNFFormula::False,
+            Formula::AP(ap) => NNFFormula::Literal(Literal::Atom(ap)),
+            Formula::True => NNFFormula::true_literal(),
+            Formula::False => NNFFormula::false_literal(),
 
             Formula::And(subs) => NNFFormula::and(subs.into_iter().map(|f| f.into())),
             Formula::Or(subs) => NNFFormula::or(subs.into_iter().map(|f| f.into())),
@@ -238,13 +248,13 @@ impl From<Formula> for NNFFormula {
 
             Formula::Not(sub) => match *sub {
                 Formula::AP(AtomicProposition { name, negated }) => {
-                    NNFFormula::AP(AtomicProposition {
+                    NNFFormula::Literal(Literal::Atom(AtomicProposition {
                         name,
                         negated: !negated,
-                    })
+                    }))
                 }
-                Formula::True => NNFFormula::False,
-                Formula::False => NNFFormula::True,
+                Formula::True => NNFFormula::false_literal(),
+                Formula::False => NNFFormula::true_literal(),
 
                 Formula::And(subs) => {
                     NNFFormula::or(subs.into_iter().map(|f| Formula::negated(f).into()))
@@ -280,9 +290,7 @@ impl From<Box<Formula>> for Box<NNFFormula> {
 impl NNFFormula {
     fn to_termtree(&self) -> Tree<String> {
         match self {
-            NNFFormula::AP(ap) => Tree::new(format!("{}", ap)),
-            NNFFormula::True => Tree::new("⊤".to_string()),
-            NNFFormula::False => Tree::new("⊥".to_string()),
+            NNFFormula::Literal(literal) => Tree::new(format!("{}", literal)),
 
             NNFFormula::And(subs) => {
                 Tree::new("∧".to_string()).with_leaves(subs.iter().map(|f| f.to_termtree()))
@@ -290,7 +298,7 @@ impl NNFFormula {
             NNFFormula::Or(subs) => {
                 Tree::new("∨".to_string()).with_leaves(subs.iter().map(|f| f.to_termtree()))
             }
-            NNFFormula::Until(lhs, int, rhs) if **lhs == NNFFormula::True => {
+            NNFFormula::Until(lhs, int, rhs) if lhs.is_true() => {
                 Tree::new(format!("F{}", int)).with_leaves([rhs.to_termtree()])
             }
             NNFFormula::Until(lhs, int, rhs) => {
@@ -311,24 +319,26 @@ impl Display for NNFFormula {
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use crate::clean::formula::parser::mltl_parser;
 
-    use crate::clean::formula::*;
+    use super::*;
 
     #[test]
     fn test_nnf_simple() {
         let formula = mltl_parser::formula("!(a U[3, 5] !b)").expect("Syntax is correct");
 
         let nnf = NNFFormula::release(
-            NNFFormula::AP(AtomicProposition {
+            NNFFormula::Literal(Literal::Atom(AtomicProposition {
                 name: Rc::from("a"),
                 negated: true,
-            }),
+            })),
             Interval::bounded(3, 5),
-            NNFFormula::AP(AtomicProposition {
+            NNFFormula::Literal(Literal::Atom(AtomicProposition {
                 name: Rc::from("b"),
                 negated: false,
-            }),
+            })),
         );
 
         assert_eq!(NNFFormula::from(formula), nnf);
@@ -341,23 +351,23 @@ mod tests {
 
         let nnf = NNFFormula::until(
             NNFFormula::and([
-                NNFFormula::AP(AtomicProposition {
+                NNFFormula::Literal(Literal::Atom(AtomicProposition {
                     name: Rc::from("a"),
                     negated: false,
-                }),
-                NNFFormula::AP(AtomicProposition {
+                })),
+                NNFFormula::Literal(Literal::Atom(AtomicProposition {
                     name: Rc::from("c"),
                     negated: true,
-                }),
+                })),
             ]),
             Interval::bounded(3, 5),
             NNFFormula::release(
-                NNFFormula::False,
+                NNFFormula::false_literal(),
                 Interval::bounded(0, 7),
-                NNFFormula::AP(AtomicProposition {
+                NNFFormula::Literal(Literal::Atom(AtomicProposition {
                     name: Rc::from("b"),
                     negated: false,
-                }),
+                })),
             ),
         );
 
