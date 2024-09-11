@@ -163,25 +163,26 @@ impl<'a> Augmenter<'a> {
         globally_interval: &Interval,
         step: Time,
     ) -> NNFFormula {
-        NNFFormula::and(self.augment_globally_iter(sub, globally_interval, step))
+        let sub_augmentation = self.get_subformula_augmentation(sub);
+        NNFFormula::and(Self::augment_globally_seq(
+            sub_augmentation,
+            globally_interval,
+            step,
+        ))
     }
 
-    fn augment_globally_iter<'b>(
-        &'b self,
-        sub: &NNFFormula,
+    fn augment_globally_seq<'b>(
+        sub: &'b FormulaSequence,
         globally_interval: &Interval,
         step: Time,
     ) -> impl Iterator<Item = NNFFormula> + 'b {
         let step_interval = Interval::singleton(step);
-        let sub_augmentation = self.get_subformula_augmentation(sub);
-        sub_augmentation
-            .interval_covering(&globally_interval.minkowski_sum(step_interval))
+        sub.interval_covering(&globally_interval.minkowski_sum(step_interval))
             .into_iter()
             .map(move |interval| {
                 NNFFormula::globally(
                     interval - step_interval,
-                    sub_augmentation
-                        .at(*interval.lb().unwrap())
+                    sub.at(*interval.lb().unwrap())
                         .clone()
                         .expect("Augmentation should have been computed"),
                 )
@@ -195,31 +196,34 @@ impl<'a> Augmenter<'a> {
         rhs: &NNFFormula,
         step: Time,
     ) -> NNFFormula {
-        let step_interval = Interval::singleton(step);
         let lhs_augmentation = self.get_subformula_augmentation(lhs);
         let rhs_augmentation = self.get_subformula_augmentation(rhs);
+        Self::augment_until_seq(lhs_augmentation, until_interval, rhs_augmentation, step)
+    }
+
+    fn augment_until_seq(
+        lhs: &FormulaSequence,
+        until_interval: &Interval,
+        rhs: &FormulaSequence,
+        step: Time,
+    ) -> NNFFormula {
+        let step_interval = Interval::singleton(step);
         NNFFormula::or(
-            lhs_augmentation
-                .refined_interval_covering(
-                    rhs_augmentation,
-                    &until_interval.minkowski_sum(step_interval),
-                )
+            lhs.refined_interval_covering(rhs, &until_interval.minkowski_sum(step_interval))
                 .into_iter()
                 .map(|interval| {
                     let interval_lb = *interval.lb().unwrap();
                     let until = NNFFormula::until(
-                        lhs_augmentation
-                            .at(interval_lb)
+                        lhs.at(interval_lb)
                             .clone()
                             .expect("Augmentation should have been computed"),
                         interval - step_interval,
-                        rhs_augmentation
-                            .at(interval_lb)
+                        rhs.at(interval_lb)
                             .clone()
                             .expect("Augmentation should have been computed"),
                     );
                     if interval_lb > step {
-                        let globally = self.augment_globally_iter(
+                        let globally = Self::augment_globally_seq(
                             lhs,
                             &Interval::bounded_ub_excl(
                                 *until_interval.lb().unwrap(),
@@ -270,7 +274,7 @@ mod tests {
 
     use rstest::*;
 
-    use crate::clean::formula::AtomicProposition;
+    use crate::clean::{formula::AtomicProposition, parser::mltl_parser};
 
     use super::*;
 
@@ -295,58 +299,103 @@ mod tests {
         [a, b, c, d]
     }
 
+    #[rstest]
+    fn test_until(aps: [NNFFormula; 4]) {
+        let [a, b, c, d] = aps;
+
+        let mut lhs_simp = FormulaSequence::indicator(
+            &Interval::bounded(0, 2),
+            Some(a.clone()),
+            Some(NNFFormula::False),
+        );
+        lhs_simp.set(&Interval::bounded(3, 5), Some(b.clone()));
+        lhs_simp.set(&Interval::bounded(6, 10), Some(c.clone()));
+
+        let mut rhs_simp = FormulaSequence::indicator(
+            &Interval::bounded(4, 7),
+            Some(d.clone()),
+            Some(NNFFormula::False),
+        );
+        rhs_simp.set(&Interval::bounded(9, 12), Some(d.clone()));
+
+        let until_interval = Interval::bounded(0, 5);
+
+        let augmented_0 = Augmenter::augment_until_seq(&lhs_simp, &until_interval, &rhs_simp, 0);
+        assert_eq!(
+            augmented_0,
+            mltl_parser::formula("(b U[4, 5] d) & (G[0, 2] a) & (X[3] b)")
+                .unwrap()
+                .into()
+        );
+        let augmented_1 = Augmenter::augment_until_seq(&lhs_simp, &until_interval, &rhs_simp, 1);
+        assert_eq!(
+            augmented_1,
+            mltl_parser::formula(
+                "((b U[3, 4] d) & (G[0, 1] a) & (X[2] b)) | ((G[0, 1] a) & (G[2, 4] b) & (X[5] d))"
+            )
+            .unwrap()
+            .into()
+        );
+    }
+
+    #[rstest]
+    fn test_globally(aps: [NNFFormula; 4]) {
+        let [a, b, c, _] = aps;
+
+        let mut sub_simp = FormulaSequence::indicator(
+            &Interval::bounded(0, 1),
+            Some(a.clone()),
+            Some(NNFFormula::True),
+        );
+        sub_simp.set(&Interval::bounded(3, 5), Some(b.clone()));
+        sub_simp.set(&Interval::bounded(6, 10), Some(c.clone()));
+
+        let globally_interval = Interval::bounded(0, 5);
+
+        let augmented_0 = NNFFormula::and(Augmenter::augment_globally_seq(
+            &sub_simp,
+            &globally_interval,
+            0,
+        ));
+        assert_eq!(
+            augmented_0,
+            mltl_parser::formula("(G[0, 1] a) & (G[3, 5] b)")
+                .unwrap()
+                .into()
+        );
+        let augmented_1 = NNFFormula::and(Augmenter::augment_globally_seq(
+            &sub_simp,
+            &globally_interval,
+            1,
+        ));
+        assert_eq!(
+            augmented_1,
+            mltl_parser::formula("a & (G[2, 4] b) & (X[5] c)")
+                .unwrap()
+                .into()
+        );
+    }
+
     // #[rstest]
-    // fn test_until(aps: [NNFFormula<u32>; 4]) {
+    // fn test_release(aps: [NNFFormula; 4]) {
     //     let [a, b, c, d] = aps;
 
     //     let unknown_interval = Interval::bounded(0, 1);
 
-    //     let mut lhs_simp =
-    //         Signal::indicator(&Interval::bounded(0, 2), a.clone(), NNFFormula::False);
-    //     lhs_simp.set(&Interval::bounded(3, 5), b.clone());
-    //     lhs_simp.set(&Interval::bounded(6, 10), c.clone());
-
-    //     let mut rhs_simp =
-    //         Signal::indicator(&Interval::bounded(4, 7), d.clone(), NNFFormula::False);
-    //     rhs_simp.set(&Interval::bounded(9, 12), d.clone());
-
-    //     let until_interval = Interval::bounded(0, 5);
-
-    //     let simp = Simplifier::get_until_simplification(
-    //         &unknown_interval,
-    //         &lhs_simp,
-    //         &until_interval,
-    //         &rhs_simp,
+    //     let mut rhs_simp = FormulaSequence::indicator(
+    //         &Interval::bounded(0, 2),
+    //         Some(a.clone()),
+    //         Some(NNFFormula::True),
     //     );
-    //     assert_eq!(
-    //         simp.at(0).as_ref().unwrap(),
-    //         &mltl_parser::formula("(b U[4, 5] d) & (G[0, 2] a) & (X[3] b)")
-    //             .unwrap()
-    //             .into()
+    //     rhs_simp.set(&Interval::bounded(3, 5), Some(b.clone()));
+    //     rhs_simp.set(&Interval::bounded(6, 10), Some(c.clone()));
+
+    //     let mut lhs_simp = FormulaSequence::indicator(
+    //         &Interval::bounded(4, 7),
+    //         Some(d.clone()),
+    //         Some(NNFFormula::False),
     //     );
-    //     assert_eq!(
-    //         simp.at(1).as_ref().unwrap(),
-    //         &mltl_parser::formula(
-    //             "((b U[3, 4] d) & (G[0, 1] a) & (X[2] b)) | ((G[0, 1] a) & (G[2, 4] b) & (X[5] d))"
-    //         )
-    //         .unwrap()
-    //         .into()
-    //     );
-    // }
-
-    // #[rstest]
-    // fn test_release(aps: [NNFFormula<u32>; 4]) {
-    //     let [a, b, c, d] = aps;
-
-    //     let unknown_interval = Interval::bounded(0, 1);
-
-    //     let mut rhs_simp = Signal::indicator(&Interval::bounded(0, 2), a.clone(), NNFFormula::True);
-    //     rhs_simp.set(&Interval::bounded(3, 5), b.clone());
-    //     rhs_simp.set(&Interval::bounded(6, 10), c.clone());
-
-    //     let mut lhs_simp =
-    //         Signal::indicator(&Interval::bounded(4, 7), d.clone(), NNFFormula::False);
-    //     lhs_simp.set(&Interval::bounded(9, 12), d.clone());
+    //     lhs_simp.set(&Interval::bounded(9, 12), Some(d.clone()));
 
     //     let release_interval = Interval::bounded(0, 5);
 

@@ -5,7 +5,6 @@ use std::{
     rc::Rc,
 };
 
-use itertools::{Either, Itertools};
 use termtree::Tree;
 
 use crate::clean::sets::{interval::Interval, interval_set::IntervalSet};
@@ -251,6 +250,9 @@ impl NNFFormula {
         }
         if matches!(sub, NNFFormula::False) {
             return NNFFormula::False;
+        }
+        if int == Interval::singleton(0) {
+            return sub;
         }
         NNFFormula::Globally(int, Box::new(sub))
     }
