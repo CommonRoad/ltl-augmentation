@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    rc::Rc,
+    sync::Arc,
 };
 
 use crate::clean::formula::atomic_proposition::AtomicProposition;
@@ -187,7 +187,22 @@ impl<C: ComplexityFunction> KnowledgeGraph<C> {
         }
     }
 
-    pub fn get_kleene_evaluation(&self, ap: &Rc<str>) -> Kleene {
+    pub fn collect_aps(&self) -> HashSet<Arc<str>> {
+        self.graph
+            .node_indices()
+            .flat_map(|idx| {
+                self.graph[idx]
+                    .class
+                    .iter()
+                    .filter_map(|literal| match literal {
+                        Literal::Atom(ap) => Some(ap.name.clone()),
+                        _ => None,
+                    })
+            })
+            .collect()
+    }
+
+    pub fn get_kleene_evaluation(&self, ap: &Arc<str>) -> Kleene {
         let representative = self.representative_of(&Literal::Atom(AtomicProposition {
             name: ap.clone(),
             negated: false,
@@ -253,23 +268,23 @@ mod tests {
     #[fixture]
     fn literals() -> [Literal; 5] {
         let a = Literal::Atom(AtomicProposition {
-            name: Rc::from("a"),
+            name: Arc::from("a"),
             negated: false,
         });
         let b = Literal::Atom(AtomicProposition {
-            name: Rc::from("b"),
+            name: Arc::from("b"),
             negated: false,
         });
         let c = Literal::Atom(AtomicProposition {
-            name: Rc::from("c"),
+            name: Arc::from("c"),
             negated: false,
         });
         let d = Literal::Atom(AtomicProposition {
-            name: Rc::from("d"),
+            name: Arc::from("d"),
             negated: false,
         });
         let e = Literal::Atom(AtomicProposition {
-            name: Rc::from("e"),
+            name: Arc::from("e"),
             negated: false,
         });
         [a, b, c, d, e]

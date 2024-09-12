@@ -13,15 +13,13 @@ use crate::clean::{
 
 type FormulaSequence = NormalizedSequence<Option<NNFFormula>>;
 
-pub struct Augmenter<'a> {
-    root: &'a NNFFormula,
+pub struct Augmenter {
     knowledge: KnowledgeSequence,
-    monitor: Monitor<'a, Kleene>,
-    augmentation_sequences: HashMap<&'a NNFFormula, FormulaSequence>,
+    monitor: Monitor<Kleene>,
 }
 
-impl<'a> Augmenter<'a> {
-    pub fn new(formula: &'a NNFFormula, knowledge: KnowledgeSequence) -> Self {
+impl Augmenter {
+    pub fn new(knowledge: KnowledgeSequence) -> Self {
         // Compute condensed and completed knowledge sequence
         let knowledge = knowledge.into_map(|kg| {
             let mut condensed = kg.condense_graph();
@@ -29,24 +27,51 @@ impl<'a> Augmenter<'a> {
             condensed
         });
 
-        // Precompute all monitoring results
-        let aps = formula
-            .collect_aps()
-            .into_iter()
-            .map(|ap| ap.name)
-            .collect();
-        let monitor = Monitor::new::<KleeneMonitorSequence>(formula, &knowledge.kleene_trace(&aps));
+        let trace = knowledge.kleene_trace();
+        let monitor = Monitor::with_default(trace, Kleene::Unknown);
 
-        Augmenter {
-            root: formula,
-            knowledge,
-            monitor,
-            augmentation_sequences: HashMap::new(),
-        }
+        Augmenter { knowledge, monitor }
     }
 
-    pub fn augment(&mut self) {
-        self.augment_rec(self.root, &Interval::singleton(0).into())
+    pub fn augment(&self, formula: &NNFFormula) -> NNFFormula {
+        self.augment_in(formula, &Interval::singleton(0).into())
+            .remove(formula)
+            .and_then(|seq| seq.at(0).as_ref().cloned())
+            .expect("Augmentation at time 0 should have been computed")
+    }
+
+    pub fn augment_in<'a>(
+        &self,
+        formula: &'a NNFFormula,
+        time_steps: &IntervalSet,
+    ) -> HashMap<&'a NNFFormula, FormulaSequence> {
+        // Precompute all monitoring results
+        let satisfaction_sequences = self.monitor.evaluate::<KleeneMonitorSequence>(formula);
+
+        let mut augmentation_sequences = HashMap::new();
+        let mut context = AugmentationContext {
+            root: formula,
+            knowledge: &self.knowledge,
+            satisfaction_sequencs: &satisfaction_sequences,
+            augmentation_sequences: &mut augmentation_sequences,
+        };
+
+        context.augment_in(time_steps);
+
+        augmentation_sequences
+    }
+}
+
+struct AugmentationContext<'a, 'b> {
+    root: &'a NNFFormula,
+    knowledge: &'b KnowledgeSequence,
+    satisfaction_sequencs: &'b HashMap<&'a NNFFormula, NormalizedSequence<Kleene>>,
+    augmentation_sequences: &'b mut HashMap<&'a NNFFormula, FormulaSequence>,
+}
+
+impl<'a, 'b> AugmentationContext<'a, 'b> {
+    pub fn augment_in(&mut self, time_steps: &IntervalSet) {
+        self.augment_rec(self.root, time_steps)
     }
 
     fn augment_rec(&mut self, formula: &'a NNFFormula, relevant_steps: &IntervalSet) {
@@ -57,8 +82,7 @@ impl<'a> Augmenter<'a> {
             // Write the monitoring result to the augmentation sequence
             let aug_seq = self.augmentation_sequences.get_mut(formula).unwrap();
             let verdicts = self
-                .monitor
-                .satisfaction_signals()
+                .satisfaction_sequencs
                 .get(formula)
                 .expect("Monitor should contain all subformulas");
             verdicts
@@ -205,11 +229,11 @@ impl<'a> Augmenter<'a> {
         ))
     }
 
-    fn augment_globally_seq<'b>(
-        sub: &'b FormulaSequence,
+    fn augment_globally_seq<'z>(
+        sub: &'z FormulaSequence,
         globally_interval: &Interval,
         step: Time,
-    ) -> impl Iterator<Item = NNFFormula> + 'b {
+    ) -> impl Iterator<Item = NNFFormula> + 'z {
         let step_interval = Interval::singleton(step);
         sub.interval_covering(&globally_interval.minkowski_sum(step_interval))
             .into_iter()
@@ -304,7 +328,7 @@ impl<'a> Augmenter<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     use rstest::*;
 
@@ -316,19 +340,19 @@ mod tests {
     #[fixture]
     fn aps() -> [NNFFormula; 4] {
         let a = NNFFormula::Literal(Literal::Atom(AtomicProposition {
-            name: Rc::from("a"),
+            name: Arc::from("a"),
             negated: false,
         }));
         let b = NNFFormula::Literal(Literal::Atom(AtomicProposition {
-            name: Rc::from("b"),
+            name: Arc::from("b"),
             negated: false,
         }));
         let c = NNFFormula::Literal(Literal::Atom(AtomicProposition {
-            name: Rc::from("c"),
+            name: Arc::from("c"),
             negated: false,
         }));
         let d = NNFFormula::Literal(Literal::Atom(AtomicProposition {
-            name: Rc::from("d"),
+            name: Arc::from("d"),
             negated: false,
         }));
         [a, b, c, d]
@@ -355,14 +379,16 @@ mod tests {
 
         let until_interval = Interval::bounded(0, 5);
 
-        let augmented_0 = Augmenter::augment_until_seq(&lhs_simp, &until_interval, &rhs_simp, 0);
+        let augmented_0 =
+            AugmentationContext::augment_until_seq(&lhs_simp, &until_interval, &rhs_simp, 0);
         assert_eq!(
             augmented_0,
             mltl_parser::formula("(b U[4, 5] d) & (G[0, 2] a) & (X[3] b)")
                 .unwrap()
                 .into()
         );
-        let augmented_1 = Augmenter::augment_until_seq(&lhs_simp, &until_interval, &rhs_simp, 1);
+        let augmented_1 =
+            AugmentationContext::augment_until_seq(&lhs_simp, &until_interval, &rhs_simp, 1);
         assert_eq!(
             augmented_1,
             mltl_parser::formula(
@@ -387,7 +413,7 @@ mod tests {
 
         let globally_interval = Interval::bounded(0, 5);
 
-        let augmented_0 = NNFFormula::and(Augmenter::augment_globally_seq(
+        let augmented_0 = NNFFormula::and(AugmentationContext::augment_globally_seq(
             &sub_simp,
             &globally_interval,
             0,
@@ -398,7 +424,7 @@ mod tests {
                 .unwrap()
                 .into()
         );
-        let augmented_1 = NNFFormula::and(Augmenter::augment_globally_seq(
+        let augmented_1 = NNFFormula::and(AugmentationContext::augment_globally_seq(
             &sub_simp,
             &globally_interval,
             1,
@@ -420,20 +446,13 @@ mod tests {
         let trace = kleene_trace_parser::trace(include_str!("../../example_trace.txt"))
             .expect("Syntax is correct");
         let knowledge = KnowledgeSequence::from(trace);
-        let mut augmenter = Augmenter::new(&phi, knowledge);
-        augmenter.augment();
-        let augmented = augmenter
-            .augmentation_sequences
-            .get(&phi)
-            .unwrap()
-            .at(0)
-            .as_ref()
-            .unwrap();
+        let augmenter = Augmenter::new(knowledge);
+        let augmented = augmenter.augment(&phi);
         let expected = mltl_parser::formula("(G[0, 4] (F rl) -> rl) & (G[5, 7] front -> !(!rl & (F rl))) & (G[8, 15] omc_e & front -> !(!rl & (F rl))) & (G[16,*] omc_e & front & oar & (F omc_o) -> !(!rl & (F rl)))")
             .expect("Syntax is correct")
             .into();
         println!("{}", augmented);
-        assert_eq!(augmented, &expected);
+        assert_eq!(augmented, expected);
     }
 
     #[rstest]
@@ -465,18 +484,11 @@ mod tests {
         let knowledge = KnowledgeSequence::from(trace);
 
         let now = std::time::Instant::now();
-        let mut augmenter = Augmenter::new(&naive_rule, knowledge);
-        augmenter.augment();
-        let augmented = augmenter
-            .augmentation_sequences
-            .get(&naive_rule)
-            .unwrap()
-            .at(0)
-            .as_ref()
-            .unwrap();
+        let augmenter = Augmenter::new(knowledge);
+        let augmented = augmenter.augment(&naive_rule);
         println!("{:.2?}", now.elapsed());
 
         // println!("{}", augmented);
-        assert_eq!(&preaugmented_rule, augmented);
+        assert_eq!(preaugmented_rule, augmented);
     }
 }

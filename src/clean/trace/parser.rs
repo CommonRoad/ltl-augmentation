@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::clean::{
     sequence::{NormalizedSequence, Sequence},
@@ -16,7 +16,7 @@ peg::parser! {
                     for (time, vals) in time_steps.into_iter().enumerate() {
                         let int = Interval::singleton(time as u32);
                         for (ap, value) in aps.iter().zip(vals) {
-                            values.entry(Rc::clone(ap)).or_insert_with(|| NormalizedSequence::uniform(Kleene::Unknown)).set(&int, value);
+                            values.entry(Arc::clone(ap)).or_insert_with(|| NormalizedSequence::uniform(Kleene::Unknown)).set(&int, value);
                         }
                     }
                     Ok(Trace::from(values))
@@ -25,7 +25,7 @@ peg::parser! {
                 }
             }
 
-        rule atomic_propositions() -> Vec<Rc<str>>
+        rule atomic_propositions() -> Vec<Arc<str>>
             = aps:(atomic_proposition() **<1,> " ") { aps }
 
         rule time_steps() -> Vec<Vec<Kleene>>
@@ -39,8 +39,8 @@ peg::parser! {
             / "F" { Kleene::False }
             / "U" { Kleene::Unknown }
 
-        rule atomic_proposition() -> Rc<str>
-            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '_']+) {Rc::from(name) }
+        rule atomic_proposition() -> Arc<str>
+            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '_']+) {Arc::from(name) }
 
         rule _ = quiet!{[' ' | '\n' | '\t']*}
     }
@@ -59,7 +59,7 @@ mod tests {
             trace,
             Trace::from(HashMap::from_iter([
                 (
-                    Rc::from("a"),
+                    Arc::from("a"),
                     NormalizedSequence::indicator(
                         &Interval::bounded(0, 1),
                         Kleene::True,
@@ -67,7 +67,7 @@ mod tests {
                     )
                 ),
                 (
-                    Rc::from("b"),
+                    Arc::from("b"),
                     NormalizedSequence::indicator(
                         &Interval::bounded(0, 1),
                         Kleene::False,
@@ -75,7 +75,7 @@ mod tests {
                     )
                 ),
                 (
-                    Rc::from("c"),
+                    Arc::from("c"),
                     NormalizedSequence::indicator(
                         &Interval::singleton(1),
                         Kleene::False,

@@ -1,18 +1,18 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, sync::Arc};
 
 use super::sequence::NormalizedSequence;
 
 pub mod parser;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Trace<V>(HashMap<Rc<str>, NormalizedSequence<V>>);
+pub struct Trace<V>(HashMap<Arc<str>, NormalizedSequence<V>>);
 
 impl<V> Trace<V> {
-    pub fn from(sequences: HashMap<Rc<str>, NormalizedSequence<V>>) -> Self {
+    pub fn from(sequences: HashMap<Arc<str>, NormalizedSequence<V>>) -> Self {
         Trace(sequences)
     }
 
-    pub fn get_sequences(&self) -> &HashMap<Rc<str>, NormalizedSequence<V>> {
+    pub fn get_sequences(&self) -> &HashMap<Arc<str>, NormalizedSequence<V>> {
         &self.0
     }
 

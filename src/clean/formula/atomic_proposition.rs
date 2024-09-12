@@ -1,9 +1,9 @@
 use std::fmt::Display;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AtomicProposition {
-    pub name: Rc<str>,
+    pub name: Arc<str>,
     pub negated: bool,
 }
 

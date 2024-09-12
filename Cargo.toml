@@ -5,11 +5,16 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "mltl_simplification"
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 itertools = "0.13.0"
 multimap = "0.10.0"
 num = "0.4.3"
 peg = "0.8.3"
+pyo3 = { version = "0.22.2", features = ["extension-module"] }
 petgraph = "0.6.5"
 termtree = "0.5.1"
 

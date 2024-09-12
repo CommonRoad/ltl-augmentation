@@ -1,4 +1,4 @@
-use std::{collections::HashSet, rc::Rc};
+use std::collections::HashSet;
 
 use super::{NormalizedSequence, Sequence};
 use crate::clean::formula::atomic_proposition::AtomicProposition;
@@ -13,7 +13,12 @@ use crate::clean::{
 pub type KnowledgeSequence = PlainSequence<KnowledgeGraph>;
 
 impl KnowledgeSequence {
-    pub fn kleene_trace(&self, aps: &HashSet<Rc<str>>) -> Trace<Kleene> {
+    pub fn kleene_trace(&self) -> Trace<Kleene> {
+        let aps: HashSet<_> = self
+            .values
+            .iter()
+            .flat_map(|(_, kg)| kg.collect_aps())
+            .collect();
         Trace::from(
             aps.iter()
                 .map(|ap| {

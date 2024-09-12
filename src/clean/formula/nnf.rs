@@ -319,7 +319,7 @@ impl Display for NNFFormula {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     use crate::clean::formula::parser::mltl_parser;
 
@@ -331,12 +331,12 @@ mod tests {
 
         let nnf = NNFFormula::release(
             NNFFormula::Literal(Literal::Atom(AtomicProposition {
-                name: Rc::from("a"),
+                name: Arc::from("a"),
                 negated: true,
             })),
             Interval::bounded(3, 5),
             NNFFormula::Literal(Literal::Atom(AtomicProposition {
-                name: Rc::from("b"),
+                name: Arc::from("b"),
                 negated: false,
             })),
         );
@@ -352,11 +352,11 @@ mod tests {
         let nnf = NNFFormula::until(
             NNFFormula::and([
                 NNFFormula::Literal(Literal::Atom(AtomicProposition {
-                    name: Rc::from("a"),
+                    name: Arc::from("a"),
                     negated: false,
                 })),
                 NNFFormula::Literal(Literal::Atom(AtomicProposition {
-                    name: Rc::from("c"),
+                    name: Arc::from("c"),
                     negated: true,
                 })),
             ]),
@@ -365,7 +365,7 @@ mod tests {
                 NNFFormula::false_literal(),
                 Interval::bounded(0, 7),
                 NNFFormula::Literal(Literal::Atom(AtomicProposition {
-                    name: Rc::from("b"),
+                    name: Arc::from("b"),
                     negated: false,
                 })),
             ),

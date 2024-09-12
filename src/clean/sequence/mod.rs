@@ -290,6 +290,16 @@ impl<V, U, W> Combinable<V, U, W, PlainSequence<U>> for PlainSequence<V> {
     }
 }
 
+impl<T: Default + Clone> FromIterator<(Time, T)> for PlainSequence<T> {
+    fn from_iter<I: IntoIterator<Item = (Time, T)>>(iter: I) -> Self {
+        let mut seq = Self::new();
+        for (time, value) in iter {
+            seq.set(&Interval::singleton(time), value);
+        }
+        seq
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NormalizedSequence<V>(PlainSequence<V>);
 
@@ -455,5 +465,11 @@ impl<V: Eq, U: Eq, W: Eq> Combinable<V, U, W, NormalizedSequence<U>> for Normali
 impl<V: Eq> From<PlainSequence<V>> for NormalizedSequence<V> {
     fn from(sequence: PlainSequence<V>) -> Self {
         NormalizedSequence(sequence).normalize()
+    }
+}
+
+impl<T: Default + Clone + Eq> FromIterator<(Time, T)> for NormalizedSequence<T> {
+    fn from_iter<I: IntoIterator<Item = (Time, T)>>(iter: I) -> Self {
+        NormalizedSequence(PlainSequence::from_iter(iter)).normalize()
     }
 }

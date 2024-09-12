@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::clean::formula::atomic_proposition::AtomicProposition;
 use crate::clean::formula::ltl::Formula;
@@ -50,7 +50,7 @@ peg::parser! {
             = ("False" / "false") { Formula::False }
 
         rule atomic_proposition() -> Formula
-            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '_']+) { Formula::AP(AtomicProposition { name: Rc::from(name), negated: false }) }
+            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '_']+) { Formula::AP(AtomicProposition { name: Arc::from(name), negated: false }) }
 
         rule not_operator() = "!"
 
@@ -110,15 +110,15 @@ mod tests {
     #[fixture]
     fn aps() -> (Formula, Formula, Formula) {
         let a = Formula::AP(AtomicProposition {
-            name: Rc::from("a"),
+            name: Arc::from("a"),
             negated: false,
         });
         let b = Formula::AP(AtomicProposition {
-            name: Rc::from("b"),
+            name: Arc::from("b"),
             negated: false,
         });
         let c = Formula::AP(AtomicProposition {
-            name: Rc::from("c"),
+            name: Arc::from("c"),
             negated: false,
         });
         (a, b, c)
