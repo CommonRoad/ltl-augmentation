@@ -1,9 +1,12 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::clean::{
-    formula::{nnf::NNFFormula, parser::mltl_parser},
+    formula::{
+        atomic_proposition::AtomicProposition, literal::Literal, nnf::NNFFormula,
+        parser::mltl_parser,
+    },
     sequence::Time,
     sets::interval::Interval,
 };
@@ -19,6 +22,93 @@ impl Formula {
             .map_err(|err| PyValueError::new_err(format!("{}", err)))?
             .into();
         Ok(Formula(formula))
+    }
+
+    #[staticmethod]
+    fn true_formula() -> Self {
+        Formula(NNFFormula::Literal(Literal::True))
+    }
+
+    #[staticmethod]
+    fn false_formula() -> Self {
+        Formula(NNFFormula::Literal(Literal::False))
+    }
+
+    #[staticmethod]
+    fn ap(name: &str) -> Self {
+        Formula(NNFFormula::Literal(Literal::Atom(AtomicProposition {
+            name: Arc::from(name),
+            negated: false,
+        })))
+    }
+
+    #[staticmethod]
+    fn negation(formula: &Formula) -> Self {
+        Formula(formula.0.clone().negated())
+    }
+
+    #[staticmethod]
+    fn conjunction(formulas: Vec<Bound<'_, Formula>>) -> Self {
+        Formula(NNFFormula::and(
+            formulas.iter().map(|f| f.borrow().0.clone()),
+        ))
+    }
+
+    #[staticmethod]
+    fn disjunction(formulas: Vec<Bound<'_, Formula>>) -> Self {
+        Formula(NNFFormula::or(
+            formulas.iter().map(|f| f.borrow().0.clone()),
+        ))
+    }
+
+    #[staticmethod]
+    fn implication(lhs: &Formula, rhs: &Formula) -> Self {
+        Formula(NNFFormula::implies(lhs.0.clone(), rhs.0.clone()))
+    }
+
+    #[staticmethod]
+    fn next(time: Time, formula: &Formula) -> Self {
+        Formula(NNFFormula::next(time, formula.0.clone()))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (formula, start=0, end=None))]
+    fn always(formula: &Formula, start: Time, end: Option<Time>) -> Self {
+        let interval = match end {
+            Some(end) => Interval::bounded(start, end),
+            None => Interval::unbounded(start),
+        };
+        Formula(NNFFormula::globally(interval, formula.0.clone()))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (formula, start=0, end=None))]
+    fn eventually(formula: &Formula, start: Time, end: Option<Time>) -> Self {
+        let interval = match end {
+            Some(end) => Interval::bounded(start, end),
+            None => Interval::unbounded(start),
+        };
+        Formula(NNFFormula::finally(interval, formula.0.clone()))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (lhs, rhs, start=0, end=None))]
+    fn until(lhs: &Formula, rhs: &Formula, start: Time, end: Option<Time>) -> Self {
+        let interval = match end {
+            Some(end) => Interval::bounded(start, end),
+            None => Interval::unbounded(start),
+        };
+        Formula(NNFFormula::until(lhs.0.clone(), interval, rhs.0.clone()))
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (lhs, rhs, start=0, end=None))]
+    fn release(lhs: &Formula, rhs: &Formula, start: Time, end: Option<Time>) -> Self {
+        let interval = match end {
+            Some(end) => Interval::bounded(start, end),
+            None => Interval::unbounded(start),
+        };
+        Formula(NNFFormula::release(lhs.0.clone(), interval, rhs.0.clone()))
     }
 
     fn __str__(&self) -> PyResult<String> {

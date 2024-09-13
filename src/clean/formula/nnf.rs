@@ -113,6 +113,10 @@ impl NNFFormula {
         }
     }
 
+    pub fn implies(lhs: Self, rhs: Self) -> Self {
+        NNFFormula::or([lhs.negated(), rhs])
+    }
+
     pub fn until(lhs: Self, int: Interval, rhs: Self) -> Self {
         if rhs.is_false() || int.is_empty() {
             return NNFFormula::false_literal();
