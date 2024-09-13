@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-use itertools::Itertools;
-
 use super::Logical;
 use crate::clean::formula::literal::Literal;
 use crate::clean::formula::nnf::NNFFormula;

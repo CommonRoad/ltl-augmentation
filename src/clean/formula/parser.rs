@@ -50,7 +50,9 @@ peg::parser! {
             = ("False" / "false") { Formula::False }
 
         rule atomic_proposition() -> Formula
-            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '_']+) { Formula::AP(AtomicProposition { name: Arc::from(name), negated: false }) }
+            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9'] ['a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '(']* ")"?) {
+                Formula::AP(AtomicProposition { name: Arc::from(name), negated: false })
+            }
 
         rule not_operator() = "!"
 
