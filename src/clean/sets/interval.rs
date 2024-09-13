@@ -93,7 +93,7 @@ impl Display for Interval {
         match self {
             Interval::Empty => write!(f, "∅"),
             Interval::Bounded { lb, ub } => write!(f, "[{}, {}]", lb, ub),
-            Interval::Unbounded { lb } => write!(f, "[{}, ∞)", lb),
+            Interval::Unbounded { lb } => write!(f, "[{}, inf]", lb),
         }
     }
 }

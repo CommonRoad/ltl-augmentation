@@ -4,6 +4,7 @@ use crate::clean::formula::ltl::Formula;
 use crate::clean::sequence::Time;
 use crate::clean::sets::interval::Interval;
 use crate::clean::sets::interval_set::IntervalSet;
+use itertools::Itertools;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
 use termtree::Tree;
@@ -287,6 +288,40 @@ impl From<Box<Formula>> for Box<NNFFormula> {
 }
 
 impl NNFFormula {
+    pub fn format_as_string<F, E>(&self, format_literal: &F) -> Result<String, E>
+    where
+        F: Fn(&Literal) -> Result<String, E>,
+    {
+        let string = match self {
+            NNFFormula::Literal(literal @ Literal::Negative(..)) => {
+                format!("!{}", format_literal(literal)?)
+            }
+            NNFFormula::Literal(literal) => format_literal(literal)?,
+            NNFFormula::And(subs) => subs
+                .iter()
+                .map(|sub| sub.format_as_string(format_literal))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .join(" & "),
+            NNFFormula::Or(subs) => subs
+                .iter()
+                .map(|sub| sub.format_as_string(format_literal))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .join(" | "),
+            NNFFormula::Until(lhs, int, rhs) => {
+                let lhs_str = lhs.format_as_string(format_literal)?;
+                let rhs_str = rhs.format_as_string(format_literal)?;
+                format!("{} U{} {}", lhs_str, int, rhs_str)
+            }
+            NNFFormula::Globally(int, sub) => {
+                let sub_str = sub.format_as_string(format_literal)?;
+                format!("G{} {}", int, sub_str)
+            }
+        };
+        Ok(format!("({})", string))
+    }
+
     fn to_termtree(&self) -> Tree<String> {
         match self {
             NNFFormula::Literal(literal) => Tree::new(format!("{}", literal)),
