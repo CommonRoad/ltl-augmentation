@@ -1,20 +1,21 @@
-use pyo3::{exceptions::PyValueError, prelude::*};
+use pyo3::prelude::*;
 
-use crate::clean::{
-    augmentation,
-    formula::{nnf::NNFFormula, parser::mltl_parser},
-};
+use crate::clean::augmentation;
+
+use super::{formula::Formula, knowledge::KnowledgeSequence};
 
 #[pyclass]
-pub struct Augmenter {
-    knowledge: usize,
-}
+pub struct Augmenter(pub augmentation::Augmenter);
 
-// #[pymethods]
-// impl Augmenter {
-//     #[new]
-//     fn new(knowledge: Py<KnowledgeSequence>) -> Self {
-//         knowledge.
-//         Augmenter { knowledge }
-//     }
-// }
+#[pymethods]
+impl Augmenter {
+    #[new]
+    fn new(knowledge: Bound<'_, KnowledgeSequence>) -> Self {
+        let rust_knowledge = knowledge.borrow().0.clone();
+        Augmenter(augmentation::Augmenter::new(rust_knowledge))
+    }
+
+    fn augment(&self, formula: Bound<'_, Formula>) -> Formula {
+        Formula(self.0.augment(&formula.borrow().0))
+    }
+}
