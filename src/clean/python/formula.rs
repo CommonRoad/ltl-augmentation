@@ -12,6 +12,7 @@ use crate::clean::{
 };
 
 #[pyclass]
+#[derive(Clone)]
 pub struct Formula(pub NNFFormula);
 
 #[pymethods]
@@ -138,6 +139,13 @@ impl Formula {
                 });
         }
         aps_with_time
+    }
+
+    fn split_at_top_level_conjunction(&self) -> Vec<Formula> {
+        match &self.0 {
+            NNFFormula::And(subs) => subs.iter().cloned().map(Formula).collect(),
+            _ => vec![self.clone()],
+        }
     }
 
     fn format_as_string(&self, format_literal: Bound<'_, PyAny>) -> PyResult<String> {
