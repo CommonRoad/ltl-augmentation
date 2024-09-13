@@ -134,7 +134,7 @@ impl Formula {
                     aps_with_time
                         .entry(time)
                         .or_insert_with(Vec::new)
-                        .push(ap.name.to_string());
+                        .push(format!("{}", ap));
                 });
         }
         aps_with_time
