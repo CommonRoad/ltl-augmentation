@@ -5,7 +5,8 @@ use std::fmt::{Display, Formatter};
 pub enum Literal {
     True,
     False,
-    Atom(AtomicProposition),
+    Positive(AtomicProposition),
+    Negative(AtomicProposition),
 }
 
 impl Literal {
@@ -13,10 +14,8 @@ impl Literal {
         match self {
             Literal::True => Literal::False,
             Literal::False => Literal::True,
-            Literal::Atom(ap) => Literal::Atom(AtomicProposition {
-                name: ap.name,
-                negated: !ap.negated,
-            }),
+            Literal::Positive(ap) => Literal::Negative(ap),
+            Literal::Negative(ap) => Literal::Positive(ap),
         }
     }
 }
@@ -26,7 +25,8 @@ impl Display for Literal {
         match self {
             Literal::True => write!(f, "⊤"),
             Literal::False => write!(f, "⊥"),
-            Literal::Atom(ap) => write!(f, "{}", ap),
+            Literal::Positive(ap) => write!(f, "{}", ap),
+            Literal::Negative(ap) => write!(f, "¬{}", ap),
         }
     }
 }

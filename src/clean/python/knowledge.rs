@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use pyo3::prelude::*;
 
@@ -18,6 +18,18 @@ type EdgesAtTime = (
 #[pyclass]
 pub struct KnowledgeSequence(pub knowledge::KnowledgeSequence);
 
+fn parse_proposition(proposition: &str) -> Literal {
+    // match the following structure "name(parameter)"
+    let mut split = proposition.split('(');
+    let name = split.next().unwrap();
+    if let Some(parameter) = split.next() {
+        let parameter = parameter.trim_end_matches(')');
+        Literal::Positive(AtomicProposition::with_parameter(name, parameter))
+    } else {
+        Literal::Positive(AtomicProposition::new(name))
+    }
+}
+
 #[pymethods]
 impl KnowledgeSequence {
     #[new]
@@ -30,43 +42,27 @@ impl KnowledgeSequence {
                 let kg_edges: Vec<_> = positive_propsitions
                     .into_iter()
                     .map(|positive_proposition| {
-                        KnowledgeGraphEdge::IsTrue(Literal::Atom(AtomicProposition {
-                            name: Arc::from(positive_proposition.as_str()),
-                            negated: false,
-                        }))
+                        KnowledgeGraphEdge::IsTrue(parse_proposition(&positive_proposition))
                     })
                     .chain(
                         negative_propsitions
                             .into_iter()
                             .map(|negative_proposition| {
-                                KnowledgeGraphEdge::IsFalse(Literal::Atom(AtomicProposition {
-                                    name: Arc::from(negative_proposition.as_str()),
-                                    negated: false,
-                                }))
+                                KnowledgeGraphEdge::IsFalse(parse_proposition(
+                                    &negative_proposition,
+                                ))
                             }),
                     )
                     .chain(implications.into_iter().map(|(lhs, rhs)| {
                         KnowledgeGraphEdge::Implication(
-                            Literal::Atom(AtomicProposition {
-                                name: Arc::from(lhs.as_str()),
-                                negated: false,
-                            }),
-                            Literal::Atom(AtomicProposition {
-                                name: Arc::from(rhs.as_str()),
-                                negated: false,
-                            }),
+                            parse_proposition(&lhs),
+                            parse_proposition(&rhs),
                         )
                     }))
                     .chain(equivalences.into_iter().map(|(lhs, rhs)| {
                         KnowledgeGraphEdge::Equivalence(
-                            Literal::Atom(AtomicProposition {
-                                name: Arc::from(lhs.as_str()),
-                                negated: false,
-                            }),
-                            Literal::Atom(AtomicProposition {
-                                name: Arc::from(rhs.as_str()),
-                                negated: false,
-                            }),
+                            parse_proposition(&lhs),
+                            parse_proposition(&rhs),
                         )
                     }))
                     .collect();

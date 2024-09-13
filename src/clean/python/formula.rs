@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, sync::Arc};
+use std::{collections::HashMap, fmt::Display};
 
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -35,10 +35,11 @@ impl Formula {
     }
 
     #[staticmethod]
-    fn ap(name: &str) -> Self {
-        Formula(NNFFormula::Literal(Literal::Atom(AtomicProposition {
-            name: Arc::from(name),
-            negated: false,
+    #[pyo3(signature = (name, parameter=None))]
+    fn ap(name: &str, parameter: Option<&str>) -> Self {
+        Formula(NNFFormula::Literal(Literal::Positive(match parameter {
+            Some(parameter) => AtomicProposition::with_parameter(name, parameter),
+            None => AtomicProposition::new(name),
         })))
     }
 

@@ -126,7 +126,7 @@ impl<'a, 'b> AugmentationContext<'a, 'b> {
             NNFFormula::Literal(Literal::True) | NNFFormula::Literal(Literal::False) => self
                 .get_subformula_augmentation_mut(formula)
                 .set(&Interval::unbounded(0), Some(formula.clone())),
-            NNFFormula::Literal(literal @ Literal::Atom(..)) => {
+            NNFFormula::Literal(literal @ (Literal::Positive(..) | Literal::Negative(..))) => {
                 self.augment_atomic_proposition(formula, literal, relevant_steps)
             }
             _ => unreachable!("This function is only called for literals"),
@@ -328,8 +328,6 @@ impl<'a, 'b> AugmentationContext<'a, 'b> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use rstest::*;
 
     use super::*;
@@ -339,22 +337,10 @@ mod tests {
 
     #[fixture]
     fn aps() -> [NNFFormula; 4] {
-        let a = NNFFormula::Literal(Literal::Atom(AtomicProposition {
-            name: Arc::from("a"),
-            negated: false,
-        }));
-        let b = NNFFormula::Literal(Literal::Atom(AtomicProposition {
-            name: Arc::from("b"),
-            negated: false,
-        }));
-        let c = NNFFormula::Literal(Literal::Atom(AtomicProposition {
-            name: Arc::from("c"),
-            negated: false,
-        }));
-        let d = NNFFormula::Literal(Literal::Atom(AtomicProposition {
-            name: Arc::from("d"),
-            negated: false,
-        }));
+        let a = NNFFormula::Literal(Literal::Positive(AtomicProposition::new("a")));
+        let b = NNFFormula::Literal(Literal::Positive(AtomicProposition::new("b")));
+        let c = NNFFormula::Literal(Literal::Positive(AtomicProposition::new("c")));
+        let d = NNFFormula::Literal(Literal::Positive(AtomicProposition::new("d")));
         [a, b, c, d]
     }
 

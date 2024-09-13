@@ -1,6 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use crate::clean::{
+    formula::atomic_proposition::AtomicProposition,
     sequence::{NormalizedSequence, Sequence},
     sets::interval::Interval,
     trace::Trace,
@@ -16,7 +17,7 @@ peg::parser! {
                     for (time, vals) in time_steps.into_iter().enumerate() {
                         let int = Interval::singleton(time as u32);
                         for (ap, value) in aps.iter().zip(vals) {
-                            values.entry(Arc::clone(ap)).or_insert_with(|| NormalizedSequence::uniform(Kleene::Unknown)).set(&int, value);
+                            values.entry(ap.clone()).or_insert_with(|| NormalizedSequence::uniform(Kleene::Unknown)).set(&int, value);
                         }
                     }
                     Ok(Trace::from(values))
@@ -25,7 +26,7 @@ peg::parser! {
                 }
             }
 
-        rule atomic_propositions() -> Vec<Arc<str>>
+        rule atomic_propositions() -> Vec<AtomicProposition>
             = aps:(atomic_proposition() **<1,> " ") { aps }
 
         rule time_steps() -> Vec<Vec<Kleene>>
@@ -39,8 +40,13 @@ peg::parser! {
             / "F" { Kleene::False }
             / "U" { Kleene::Unknown }
 
-        rule atomic_proposition() -> Arc<str>
-            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '_']+) {Arc::from(name) }
+        rule atomic_proposition() -> AtomicProposition
+            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9'] ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) parameter:$("(" ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']* ")")? {
+                match parameter {
+                    Some(param) => AtomicProposition::with_parameter(name, param),
+                    None => AtomicProposition::new(name),
+                }
+            }
 
         rule _ = quiet!{[' ' | '\n' | '\t']*}
     }
@@ -59,7 +65,7 @@ mod tests {
             trace,
             Trace::from(HashMap::from_iter([
                 (
-                    Arc::from("a"),
+                    AtomicProposition::new("a"),
                     NormalizedSequence::indicator(
                         &Interval::bounded(0, 1),
                         Kleene::True,
@@ -67,7 +73,7 @@ mod tests {
                     )
                 ),
                 (
-                    Arc::from("b"),
+                    AtomicProposition::new("b"),
                     NormalizedSequence::indicator(
                         &Interval::bounded(0, 1),
                         Kleene::False,
@@ -75,7 +81,7 @@ mod tests {
                     )
                 ),
                 (
-                    Arc::from("c"),
+                    AtomicProposition::new("c"),
                     NormalizedSequence::indicator(
                         &Interval::singleton(1),
                         Kleene::False,

@@ -119,7 +119,8 @@ impl Display for Formula {
 impl From<NNFFormula> for Formula {
     fn from(formula: NNFFormula) -> Self {
         match formula {
-            NNFFormula::Literal(Literal::Atom(ap)) => Formula::AP(ap),
+            NNFFormula::Literal(Literal::Positive(ap)) => Formula::AP(ap),
+            NNFFormula::Literal(Literal::Negative(ap)) => Formula::negated(Formula::AP(ap)),
             NNFFormula::Literal(Literal::True) => Formula::True,
             NNFFormula::Literal(Literal::False) => Formula::False,
 

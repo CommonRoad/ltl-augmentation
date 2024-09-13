@@ -58,26 +58,26 @@ impl<V: TruthValue + Eq + Clone> Monitor<V> {
         let logical_signal = match formula {
             NNFFormula::Literal(Literal::True) => NormalizedSequence::uniform(V::top()).into(),
             NNFFormula::Literal(Literal::False) => NormalizedSequence::uniform(V::bot()).into(),
-            NNFFormula::Literal(Literal::Atom(ap)) => {
-                match self.trace.get_ap_sequence(ap.name.as_ref()) {
-                    Some(sequence) => {
-                        if ap.negated {
-                            L::from(sequence.clone()).negation()
-                        } else {
-                            sequence.clone().into()
-                        }
+            NNFFormula::Literal(Literal::Positive(ap)) => {
+                match (self.trace.get_ap_sequence(ap), &self.default) {
+                    (Some(sequence), _) => sequence.clone().into(),
+                    (None, Some(default)) => NormalizedSequence::uniform(default.clone()).into(),
+                    _ => panic!(
+                        "Missing trace value for atomic proposition {}, but no default specified!",
+                        ap
+                    ),
+                }
+            }
+            NNFFormula::Literal(Literal::Negative(ap)) => {
+                match (self.trace.get_ap_sequence(ap), &self.default) {
+                    (Some(sequence), _) => L::from(sequence.clone()).negation(),
+                    (None, Some(default)) => {
+                        L::from(NormalizedSequence::uniform(default.clone())).negation()
                     }
-                    None => {
-                        if let Some(default) = &self.default {
-                            if ap.negated {
-                                L::from(NormalizedSequence::uniform(default.clone())).negation()
-                            } else {
-                                NormalizedSequence::uniform(default.clone()).into()
-                            }
-                        } else {
-                            panic!("Missing trace value for atomic proposition {}, but no default specified!", ap.name)
-                        }
-                    }
+                    _ => panic!(
+                        "Missing trace value for atomic proposition {}, but no default specified!",
+                        ap
+                    ),
                 }
             }
             NNFFormula::And(subs) | NNFFormula::Or(subs) => {
@@ -115,11 +115,10 @@ impl<V: TruthValue + Eq + Clone> Monitor<V> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use rstest::*;
 
     use super::*;
+    use crate::clean::formula::atomic_proposition::AtomicProposition;
     use crate::clean::formula::parser::mltl_parser;
     use crate::clean::{
         monitoring::{boolean::BooleanMonitorSequence, kleene::KleeneMonitorSequence},
@@ -141,9 +140,9 @@ mod tests {
         let b_signal = BooleanSequence::from_positive_intervals([Interval::bounded(5, 7)]);
         let c_signal = BooleanSequence::from_positive_intervals([Interval::bounded(10, 12)]);
         let trace = Trace::from(HashMap::from_iter([
-            (Arc::from("a"), a_signal),
-            (Arc::from("b"), b_signal),
-            (Arc::from("c"), c_signal),
+            (AtomicProposition::new("a"), a_signal),
+            (AtomicProposition::new("b"), b_signal),
+            (AtomicProposition::new("c"), c_signal),
         ]));
 
         let monitor = Monitor::new(trace);
@@ -187,9 +186,9 @@ mod tests {
             Kleene::Unknown,
         );
         let trace = Trace::from(HashMap::from_iter([
-            (Arc::from("a"), a_signal),
-            (Arc::from("b"), b_signal),
-            (Arc::from("c"), c_signal),
+            (AtomicProposition::new("a"), a_signal),
+            (AtomicProposition::new("b"), b_signal),
+            (AtomicProposition::new("c"), c_signal),
         ]));
 
         let monitor = Monitor::new(trace);

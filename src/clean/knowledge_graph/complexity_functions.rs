@@ -12,7 +12,7 @@ impl ComplexityFunction for DefaultComplexityFunction {
         match literal {
             Literal::True => 0,
             Literal::False => 0,
-            Literal::Atom(_) => 1,
+            Literal::Positive(..) | Literal::Negative(..) => 1,
         }
     }
 }

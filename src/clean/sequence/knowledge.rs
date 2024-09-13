@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
 use super::{NormalizedSequence, Sequence};
-use crate::clean::formula::atomic_proposition::AtomicProposition;
 use crate::clean::formula::literal::Literal;
 use crate::clean::{
     knowledge_graph::{KnowledgeGraph, KnowledgeGraphEdge},
@@ -40,22 +39,16 @@ impl From<Trace<Kleene>> for KnowledgeSequence {
                 Kleene::True => edges
                     .iter()
                     .cloned()
-                    .chain(std::iter::once(KnowledgeGraphEdge::IsTrue(Literal::Atom(
-                        AtomicProposition {
-                            name: ap.clone(),
-                            negated: false,
-                        },
-                    ))))
+                    .chain(std::iter::once(KnowledgeGraphEdge::IsTrue(
+                        Literal::Positive(ap.clone()),
+                    )))
                     .collect(),
                 Kleene::False => edges
                     .iter()
                     .cloned()
-                    .chain(std::iter::once(KnowledgeGraphEdge::IsFalse(Literal::Atom(
-                        AtomicProposition {
-                            name: ap.clone(),
-                            negated: false,
-                        },
-                    ))))
+                    .chain(std::iter::once(KnowledgeGraphEdge::IsFalse(
+                        Literal::Positive(ap.clone()),
+                    )))
                     .collect(),
                 Kleene::Unknown => edges.clone(),
             });

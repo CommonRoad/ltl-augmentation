@@ -176,10 +176,10 @@ impl NNFFormula {
 
     pub fn collect_aps(&self) -> HashSet<AtomicProposition> {
         match self {
-            NNFFormula::Literal(Literal::True) | NNFFormula::Literal(Literal::False) => {
-                HashSet::new()
+            NNFFormula::Literal(Literal::True | Literal::False) => HashSet::new(),
+            NNFFormula::Literal(Literal::Positive(ap) | Literal::Negative(ap)) => {
+                HashSet::from([ap.clone()])
             }
-            NNFFormula::Literal(Literal::Atom(ap)) => HashSet::from([ap.clone()]),
             NNFFormula::And(subs) | NNFFormula::Or(subs) => subs
                 .iter()
                 .map(|f| f.collect_aps())
@@ -209,8 +209,8 @@ impl NNFFormula {
         map: &mut HashMap<AtomicProposition, IntervalSet>,
     ) {
         match self {
-            NNFFormula::Literal(Literal::True) | NNFFormula::Literal(Literal::False) => {}
-            NNFFormula::Literal(Literal::Atom(ap)) => {
+            NNFFormula::Literal(Literal::True | Literal::False) => {}
+            NNFFormula::Literal(Literal::Positive(ap) | Literal::Negative(ap)) => {
                 map.entry(ap.clone()).or_default().add(interval);
             }
             NNFFormula::And(subs) | NNFFormula::Or(subs) => {
@@ -233,7 +233,7 @@ impl NNFFormula {
 impl From<Formula> for NNFFormula {
     fn from(formula: Formula) -> Self {
         match formula {
-            Formula::AP(ap) => NNFFormula::Literal(Literal::Atom(ap)),
+            Formula::AP(ap) => NNFFormula::Literal(Literal::Positive(ap)),
             Formula::True => NNFFormula::true_literal(),
             Formula::False => NNFFormula::false_literal(),
 
@@ -251,12 +251,7 @@ impl From<Formula> for NNFFormula {
             Formula::Next(time, sub) => NNFFormula::next(time, (*sub).into()),
 
             Formula::Not(sub) => match *sub {
-                Formula::AP(AtomicProposition { name, negated }) => {
-                    NNFFormula::Literal(Literal::Atom(AtomicProposition {
-                        name,
-                        negated: !negated,
-                    }))
-                }
+                Formula::AP(ap) => NNFFormula::Literal(Literal::Negative(ap)),
                 Formula::True => NNFFormula::false_literal(),
                 Formula::False => NNFFormula::true_literal(),
 
@@ -323,8 +318,6 @@ impl Display for NNFFormula {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use crate::clean::formula::parser::mltl_parser;
 
     use super::*;
@@ -334,15 +327,9 @@ mod tests {
         let formula = mltl_parser::formula("!(a U[3, 5] !b)").expect("Syntax is correct");
 
         let nnf = NNFFormula::release(
-            NNFFormula::Literal(Literal::Atom(AtomicProposition {
-                name: Arc::from("a"),
-                negated: true,
-            })),
+            NNFFormula::Literal(Literal::Negative(AtomicProposition::new("a"))),
             Interval::bounded(3, 5),
-            NNFFormula::Literal(Literal::Atom(AtomicProposition {
-                name: Arc::from("b"),
-                negated: false,
-            })),
+            NNFFormula::Literal(Literal::Positive(AtomicProposition::new("b"))),
         );
 
         assert_eq!(NNFFormula::from(formula), nnf);
@@ -355,23 +342,14 @@ mod tests {
 
         let nnf = NNFFormula::until(
             NNFFormula::and([
-                NNFFormula::Literal(Literal::Atom(AtomicProposition {
-                    name: Arc::from("a"),
-                    negated: false,
-                })),
-                NNFFormula::Literal(Literal::Atom(AtomicProposition {
-                    name: Arc::from("c"),
-                    negated: true,
-                })),
+                NNFFormula::Literal(Literal::Positive(AtomicProposition::new("a"))),
+                NNFFormula::Literal(Literal::Negative(AtomicProposition::new("c"))),
             ]),
             Interval::bounded(3, 5),
             NNFFormula::release(
                 NNFFormula::false_literal(),
                 Interval::bounded(0, 7),
-                NNFFormula::Literal(Literal::Atom(AtomicProposition {
-                    name: Arc::from("b"),
-                    negated: false,
-                })),
+                NNFFormula::Literal(Literal::Positive(AtomicProposition::new("b"))),
             ),
         );
 

@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
 
 use crate::clean::formula::atomic_proposition::AtomicProposition;
 use crate::clean::formula::literal::Literal;
@@ -187,7 +184,7 @@ impl<C: ComplexityFunction> KnowledgeGraph<C> {
         }
     }
 
-    pub fn collect_aps(&self) -> HashSet<Arc<str>> {
+    pub fn collect_aps(&self) -> HashSet<AtomicProposition> {
         self.graph
             .node_indices()
             .flat_map(|idx| {
@@ -195,18 +192,16 @@ impl<C: ComplexityFunction> KnowledgeGraph<C> {
                     .class
                     .iter()
                     .filter_map(|literal| match literal {
-                        Literal::Atom(ap) => Some(ap.name.clone()),
+                        // It is not necessary to include the negated literals, since always both are present
+                        Literal::Positive(ap) => Some(ap.clone()),
                         _ => None,
                     })
             })
             .collect()
     }
 
-    pub fn get_kleene_evaluation(&self, ap: &Arc<str>) -> Kleene {
-        let representative = self.representative_of(&Literal::Atom(AtomicProposition {
-            name: ap.clone(),
-            negated: false,
-        }));
+    pub fn get_kleene_evaluation(&self, ap: &AtomicProposition) -> Kleene {
+        let representative = self.representative_of(&Literal::Positive(ap.clone()));
         if let Some(representative) = representative {
             if matches!(representative, Literal::True) {
                 Kleene::True
@@ -267,26 +262,11 @@ mod tests {
 
     #[fixture]
     fn literals() -> [Literal; 5] {
-        let a = Literal::Atom(AtomicProposition {
-            name: Arc::from("a"),
-            negated: false,
-        });
-        let b = Literal::Atom(AtomicProposition {
-            name: Arc::from("b"),
-            negated: false,
-        });
-        let c = Literal::Atom(AtomicProposition {
-            name: Arc::from("c"),
-            negated: false,
-        });
-        let d = Literal::Atom(AtomicProposition {
-            name: Arc::from("d"),
-            negated: false,
-        });
-        let e = Literal::Atom(AtomicProposition {
-            name: Arc::from("e"),
-            negated: false,
-        });
+        let a = Literal::Positive(AtomicProposition::new("a"));
+        let b = Literal::Positive(AtomicProposition::new("b"));
+        let c = Literal::Positive(AtomicProposition::new("c"));
+        let d = Literal::Positive(AtomicProposition::new("d"));
+        let e = Literal::Positive(AtomicProposition::new("e"));
         [a, b, c, d, e]
     }
 

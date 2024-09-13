@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::clean::formula::atomic_proposition::AtomicProposition;
 use crate::clean::formula::ltl::Formula;
 use crate::clean::sets::interval::Interval;
@@ -38,9 +36,9 @@ peg::parser! {
                 --
                 not_operator() _ sub:@ { Formula::negated(sub) }
                 --
-                _ atom:atomic_formula() _ { atom }
+                atom:atomic_formula() { atom }
                 --
-                _ "(" f:formula() ")" _ { f }
+                "(" f:formula() ")" { f }
             }
 
         rule atomic_formula() -> Formula
@@ -53,9 +51,15 @@ peg::parser! {
             = ("False" / "false") { Formula::False }
 
         rule atomic_proposition() -> Formula
-            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9'] ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']* ("(" ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']* ")")?) {
-                Formula::AP(AtomicProposition { name: Arc::from(name), negated: false })
+            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9'] ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) param:parameter()? {
+                match param {
+                    Some(param) => Formula::AP(AtomicProposition::with_parameter(name, param)),
+                    None => Formula::AP(AtomicProposition::new(name))
+                }
             }
+
+        rule parameter() -> &'input str
+            = "(" param:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) ")" { param }
 
         rule not_operator() = "!"
 
@@ -113,25 +117,17 @@ mod tests {
     use super::*;
 
     #[fixture]
-    fn aps() -> (Formula, Formula, Formula) {
-        let a = Formula::AP(AtomicProposition {
-            name: Arc::from("a"),
-            negated: false,
-        });
-        let b = Formula::AP(AtomicProposition {
-            name: Arc::from("b"),
-            negated: false,
-        });
-        let c = Formula::AP(AtomicProposition {
-            name: Arc::from("c"),
-            negated: false,
-        });
-        (a, b, c)
+    fn aps() -> [Formula; 4] {
+        let a = Formula::AP(AtomicProposition::new("a"));
+        let b = Formula::AP(AtomicProposition::new("b"));
+        let c = Formula::AP(AtomicProposition::new("c"));
+        let d_param = Formula::AP(AtomicProposition::with_parameter("d", "42"));
+        [a, b, c, d_param]
     }
 
     #[rstest]
-    fn test_parser(aps: (Formula, Formula, Formula)) {
-        let (a, b, c) = aps;
+    fn test_parser(aps: [Formula; 4]) {
+        let [a, b, c, ..] = aps;
 
         let formula = mltl_parser::formula("!a U[1, 2] !(b & F[0, 3] c)").unwrap();
         assert_eq!(
@@ -148,8 +144,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parser_associativity(aps: (Formula, Formula, Formula)) {
-        let (a, b, c) = aps;
+    fn test_parser_associativity(aps: [Formula; 4]) {
+        let [a, b, c, ..] = aps;
 
         assert_eq!(
             mltl_parser::formula("a -> b -> c").unwrap(),
@@ -162,6 +158,20 @@ mod tests {
                 a,
                 Interval::bounded(0, 1),
                 Formula::until(b, Interval::bounded(1, 2), c)
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_parser_parameter(aps: [Formula; 4]) {
+        let [a, b, _, d_param] = aps;
+
+        assert_eq!(
+            mltl_parser::formula("a R b -> d(42)").unwrap(),
+            Formula::release(
+                a.clone(),
+                Interval::unbounded(0),
+                Formula::implies(b.clone(), d_param.clone())
             )
         );
     }
