@@ -64,9 +64,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
-    use crate::{parser::mltl_parser, sets::interval::Interval};
+    use crate::parser::mltl_parser;
 
     use super::*;
 
@@ -85,7 +83,7 @@ mod tests {
         )
         .expect("Syntax is correct")
         .into();
-        let implications = find_necessary_implications(&formula);
+        let _implications = find_necessary_implications(&formula);
         // TODO: Make this independent of the order of the implications
         // assert_eq!(
         //     implications,

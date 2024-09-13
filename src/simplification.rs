@@ -382,13 +382,13 @@ mod tests {
         )
         .expect("Syntax is correct")
         .into();
-        let naive_rule: NNFFormula<_> = mltl_parser::formula(
-            fs::read_to_string(format!("{}_naive.txt", rule).as_str())
-                .expect("File exists")
-                .as_str(),
-        )
-        .expect("Syntax is correct")
-        .into();
+        // let naive_rule: NNFFormula<_> = mltl_parser::formula(
+        //     fs::read_to_string(format!("{}_naive.txt", rule).as_str())
+        //         .expect("File exists")
+        //         .as_str(),
+        // )
+        // .expect("Syntax is correct")
+        // .into();
         let trace = trace_parser::trace(
             fs::read_to_string(format!("trace_{}.txt", rule).as_str())
                 .expect("File exists")
@@ -396,11 +396,11 @@ mod tests {
         )
         .expect("Syntax is correct");
         let now = std::time::Instant::now();
-        let mut simplifier = Simplifier::new(&naive_rule, &trace);
+        let mut simplifier = Simplifier::new(&presimplified_rule, &trace);
         simplifier.simplify();
         let simplified = simplifier
             .simplification_signals
-            .get(&naive_rule)
+            .get(&presimplified_rule)
             .unwrap()
             .at(0);
         println!("{:.2?}", now.elapsed());

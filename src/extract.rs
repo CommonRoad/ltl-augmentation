@@ -56,23 +56,6 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> NecessaryIntervals<T> {
                 .collect(),
         )
     }
-
-    fn is_consistent(&self) -> bool {
-        let aps = self.0.keys().map(|ap| Rc::clone(&ap.name)).collect_vec();
-        aps.iter()
-            .filter_map(|ap| {
-                let positive = self.0.get(&AtomicProposition {
-                    name: Rc::clone(ap),
-                    negated: false,
-                })?;
-                let negative = self.0.get(&AtomicProposition {
-                    name: Rc::clone(ap),
-                    negated: true,
-                })?;
-                Some(positive.intersect(negative).is_empty())
-            })
-            .all(|b| b)
-    }
 }
 
 struct KnowledgeProvider<'a, T> {
@@ -444,14 +427,14 @@ mod tests {
         let ri5: NNFFormula<_> = mltl_parser::formula(include_str!("../ri5.txt"))
             .expect("Syntax is correct")
             .into();
-        let ri5_naive: NNFFormula<_> = mltl_parser::formula(include_str!("../ri5_naive.txt"))
-            .expect("Syntax is correct")
-            .into();
+        // let ri5_naive: NNFFormula<_> = mltl_parser::formula(include_str!("../ri5_naive.txt"))
+        //     .expect("Syntax is correct")
+        //     .into();
         // println!("{}", ri5);
         let trace =
             trace_parser::trace(include_str!("../trace_ri5.txt")).expect("Syntax is correct");
         let now = std::time::Instant::now();
-        let mut extractor = NecessaryIntervalExtractor::new(&ri5_naive, &trace);
+        let mut extractor = NecessaryIntervalExtractor::new(&ri5, &trace);
         let mut intervals = extractor.extract(Interval::singleton(0).into());
         println!("{:.2?}", now.elapsed());
         intervals.retain(|_, i| !i.is_empty());
