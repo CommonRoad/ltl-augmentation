@@ -7,6 +7,9 @@ use crate::clean::sets::interval::Interval;
 peg::parser! {
     pub grammar mltl_parser() for str {
         pub rule formula() -> Formula
+            = _ f:formula_precedence() _ { f }
+
+        rule formula_precedence() -> Formula
             = precedence! {
                 lhs:@ __ int:until_operator() __ rhs:(@) { Formula::until(lhs, int, rhs) }
                 lhs:@ __ int:release_operator() __ rhs:(@) { Formula::release(lhs, int, rhs) }
@@ -35,9 +38,9 @@ peg::parser! {
                 --
                 not_operator() _ sub:@ { Formula::negated(sub) }
                 --
-                atom:atomic_formula() { atom }
+                _ atom:atomic_formula() _ { atom }
                 --
-                "(" f:formula() ")" { f }
+                _ "(" f:formula() ")" _ { f }
             }
 
         rule atomic_formula() -> Formula
@@ -50,7 +53,7 @@ peg::parser! {
             = ("False" / "false") { Formula::False }
 
         rule atomic_proposition() -> Formula
-            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9'] ['a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '(']* ")"?) {
+            = name:$(['a'..='z' | 'A'..='Z' | '0'..='9'] ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']* ("(" ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']* ")")?) {
                 Formula::AP(AtomicProposition { name: Arc::from(name), negated: false })
             }
 
