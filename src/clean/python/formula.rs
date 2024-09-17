@@ -122,6 +122,10 @@ impl Formula {
         Ok(format!("{:?}", self.0))
     }
 
+    fn is_true(&self) -> bool {
+        self.0.is_true()
+    }
+
     #[pyo3(signature = (end, start=0))]
     fn relevant_aps(&self, end: Time, start: Time) -> HashMap<Time, Vec<String>> {
         let interval = Interval::bounded(start, end).into();
