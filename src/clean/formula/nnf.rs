@@ -229,6 +229,33 @@ impl NNFFormula {
             }
         }
     }
+
+    pub fn remove_timed_until(self) -> Self {
+        match self {
+            NNFFormula::Literal(..) => self,
+            NNFFormula::And(subs) => {
+                NNFFormula::and(subs.into_iter().map(NNFFormula::remove_timed_until))
+            }
+            NNFFormula::Or(subs) => {
+                NNFFormula::or(subs.into_iter().map(NNFFormula::remove_timed_until))
+            }
+            NNFFormula::Globally(int, sub) => NNFFormula::globally(int, sub.remove_timed_until()),
+            NNFFormula::Until(lhs, int, rhs) => match int {
+                Interval::Unbounded { lb: 0 } => {
+                    NNFFormula::until(lhs.remove_timed_until(), int, rhs.remove_timed_until())
+                }
+                Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => {
+                    let lhs = lhs.remove_timed_until();
+                    let rhs = rhs.remove_timed_until();
+                    NNFFormula::and([
+                        NNFFormula::finally(int, rhs.clone()),
+                        NNFFormula::next(lb, NNFFormula::until(lhs, Interval::unbounded(0), rhs)),
+                    ])
+                }
+                Interval::Empty => NNFFormula::false_literal(),
+            },
+        }
+    }
 }
 
 impl From<Formula> for NNFFormula {
@@ -309,6 +336,10 @@ impl NNFFormula {
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .join(" | "),
+            NNFFormula::Until(lhs, int, rhs) if lhs.is_true() => {
+                let rhs_str = rhs.format_as_string(format_literal)?;
+                format!("F{} {}", int, rhs_str)
+            }
             NNFFormula::Until(lhs, int, rhs) => {
                 let lhs_str = lhs.format_as_string(format_literal)?;
                 let rhs_str = rhs.format_as_string(format_literal)?;

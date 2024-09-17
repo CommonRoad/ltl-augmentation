@@ -69,7 +69,8 @@ impl Formula {
     }
 
     #[staticmethod]
-    fn next(time: Time, formula: &Formula) -> Self {
+    #[pyo3(signature = (formula, time=1))]
+    fn next(formula: &Formula, time: Time) -> Self {
         Formula(NNFFormula::next(time, formula.0.clone()))
     }
 
@@ -149,18 +150,21 @@ impl Formula {
     }
 
     fn format_as_string(&self, format_literal: Bound<'_, PyAny>) -> PyResult<String> {
-        self.0.format_as_string(&|literal| match literal {
-            Literal::True => format_literal
-                .call1(("true", None::<&str>))?
-                .extract::<String>(),
-            Literal::False => format_literal
-                .call1(("false", None::<&str>))?
-                .extract::<String>(),
-            Literal::Positive(AtomicProposition { name, parameter })
-            | Literal::Negative(AtomicProposition { name, parameter }) => format_literal
-                .call1((name.as_ref(), Some(parameter.as_ref())))?
-                .extract::<String>(),
-        })
+        self.0
+            .clone()
+            .remove_timed_until()
+            .format_as_string(&|literal| match literal {
+                Literal::True => format_literal
+                    .call1(("true", None::<&str>))?
+                    .extract::<String>(),
+                Literal::False => format_literal
+                    .call1(("false", None::<&str>))?
+                    .extract::<String>(),
+                Literal::Positive(AtomicProposition { name, parameter })
+                | Literal::Negative(AtomicProposition { name, parameter }) => format_literal
+                    .call1((name.as_ref(), Some(parameter.as_ref())))?
+                    .extract::<String>(),
+            })
     }
 }
 
