@@ -153,7 +153,7 @@ impl Formula {
         self.0
             .clone()
             .remove_timed_until()
-            .format_as_string(&|literal| match literal {
+            .format_as_string(true, &|literal| match literal {
                 Literal::True => format_literal
                     .call1(("true", None::<&str>))?
                     .extract::<String>(),
