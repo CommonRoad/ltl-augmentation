@@ -174,8 +174,7 @@ impl Formula {
             None => without_timed_until.format_as_string(false, &|literal| match literal {
                 Literal::True => Ok("true".to_string()),
                 Literal::False => Ok("false".to_string()),
-                Literal::Positive(ap) => Ok(format!("{}", ap)),
-                Literal::Negative(ap) => Ok(format!("!{}", ap)),
+                Literal::Positive(ap) | Literal::Negative(ap) => Ok(format!("{}", ap)),
             }),
         }
     }
