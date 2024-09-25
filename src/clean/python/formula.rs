@@ -153,25 +153,30 @@ impl Formula {
         }
     }
 
+    fn remove_delayed_until(&self) -> Self {
+        Formula(self.0.clone().remove_delayed_until())
+    }
+
+    fn remove_timed_until(&self) -> Self {
+        Formula(self.0.clone().remove_timed_until())
+    }
+
     #[pyo3(signature = (format_literal=None))]
     fn format_as_string(&self, format_literal: Option<Bound<'_, PyAny>>) -> PyResult<String> {
-        let without_timed_until = self.0.clone().remove_timed_until();
         match format_literal {
-            Some(format_literal) => {
-                without_timed_until.format_as_string(false, &|literal| match literal {
-                    Literal::True => format_literal
-                        .call1(("true", None::<&str>))?
-                        .extract::<String>(),
-                    Literal::False => format_literal
-                        .call1(("false", None::<&str>))?
-                        .extract::<String>(),
-                    Literal::Positive(AtomicProposition { name, parameter })
-                    | Literal::Negative(AtomicProposition { name, parameter }) => format_literal
-                        .call1((name.as_ref(), Some(parameter.as_ref())))?
-                        .extract::<String>(),
-                })
-            }
-            None => without_timed_until.format_as_string(false, &|literal| match literal {
+            Some(format_literal) => self.0.format_as_string(&|literal| match literal {
+                Literal::True => format_literal
+                    .call1(("true", None::<&str>))?
+                    .extract::<String>(),
+                Literal::False => format_literal
+                    .call1(("false", None::<&str>))?
+                    .extract::<String>(),
+                Literal::Positive(AtomicProposition { name, parameter })
+                | Literal::Negative(AtomicProposition { name, parameter }) => format_literal
+                    .call1((name.as_ref(), Some(parameter.as_ref())))?
+                    .extract::<String>(),
+            }),
+            None => self.0.format_as_string(&|literal| match literal {
                 Literal::True => Ok("true".to_string()),
                 Literal::False => Ok("false".to_string()),
                 Literal::Positive(ap) | Literal::Negative(ap) => Ok(format!("{}", ap)),

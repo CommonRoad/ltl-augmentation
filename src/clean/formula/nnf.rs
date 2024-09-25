@@ -230,6 +230,36 @@ impl NNFFormula {
         }
     }
 
+    pub fn remove_delayed_until(self) -> Self {
+        match self {
+            NNFFormula::Literal(..) => self,
+            NNFFormula::And(subs) => {
+                NNFFormula::and(subs.into_iter().map(NNFFormula::remove_delayed_until))
+            }
+            NNFFormula::Or(subs) => {
+                NNFFormula::or(subs.into_iter().map(NNFFormula::remove_delayed_until))
+            }
+            NNFFormula::Globally(int, sub) => NNFFormula::globally(int, sub.remove_delayed_until()),
+            NNFFormula::Until(lhs, int, rhs) if lhs.is_true() => {
+                NNFFormula::finally(int, rhs.remove_delayed_until())
+            }
+            NNFFormula::Until(lhs, int, rhs) => match int {
+                Interval::Unbounded { lb: 0 } | Interval::Bounded { lb: 0, .. } => {
+                    NNFFormula::until(lhs.remove_delayed_until(), int, rhs.remove_delayed_until())
+                }
+                Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => NNFFormula::next(
+                    lb,
+                    NNFFormula::until(
+                        lhs.remove_delayed_until(),
+                        int - Interval::singleton(lb),
+                        rhs.remove_delayed_until(),
+                    ),
+                ),
+                Interval::Empty => NNFFormula::false_literal(),
+            },
+        }
+    }
+
     pub fn remove_timed_until(self) -> Self {
         match self {
             NNFFormula::Literal(..) => self,
@@ -318,11 +348,7 @@ impl From<Box<Formula>> for Box<NNFFormula> {
 }
 
 impl NNFFormula {
-    pub fn format_as_string<F, E>(
-        &self,
-        use_timed_until: bool,
-        format_literal: &F,
-    ) -> Result<String, E>
+    pub fn format_as_string<F, E>(&self, format_literal: &F) -> Result<String, E>
     where
         F: Fn(&Literal) -> Result<String, E>,
     {
@@ -333,33 +359,37 @@ impl NNFFormula {
             NNFFormula::Literal(literal) => format_literal(literal)?,
             NNFFormula::And(subs) => subs
                 .iter()
-                .map(|sub| sub.format_as_string(use_timed_until, format_literal))
+                .map(|sub| sub.format_as_string(format_literal))
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .join(" & "),
             NNFFormula::Or(subs) => subs
                 .iter()
-                .map(|sub| sub.format_as_string(use_timed_until, format_literal))
+                .map(|sub| sub.format_as_string(format_literal))
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .join(" | "),
             NNFFormula::Until(lhs, int, rhs) if lhs.is_true() => {
-                let rhs_str = rhs.format_as_string(use_timed_until, format_literal)?;
-                format!("F{} {}", int, rhs_str)
+                let rhs_str = rhs.format_as_string(format_literal)?;
+                match int {
+                    Interval::Unbounded { lb: 0 } => format!("F {}", rhs_str),
+                    _ => format!("F{} {}", int, rhs_str),
+                }
             }
             NNFFormula::Until(lhs, int, rhs) => {
-                let lhs_str = lhs.format_as_string(use_timed_until, format_literal)?;
-                let rhs_str = rhs.format_as_string(use_timed_until, format_literal)?;
-                if use_timed_until {
-                    format!("{} U{} {}", lhs_str, int, rhs_str)
-                } else {
-                    assert!(matches!(int, Interval::Unbounded { lb: 0 }));
-                    format!("{} U {}", lhs_str, rhs_str)
+                let lhs_str = lhs.format_as_string(format_literal)?;
+                let rhs_str = rhs.format_as_string(format_literal)?;
+                match int {
+                    Interval::Unbounded { lb: 0 } => format!("{} U {}", lhs_str, rhs_str),
+                    _ => format!("{} U{} {}", lhs_str, int, rhs_str),
                 }
             }
             NNFFormula::Globally(int, sub) => {
-                let sub_str = sub.format_as_string(use_timed_until, format_literal)?;
-                format!("G{} {}", int, sub_str)
+                let sub_str = sub.format_as_string(format_literal)?;
+                match int {
+                    Interval::Unbounded { lb: 0 } => format!("G {}", sub_str),
+                    _ => format!("G{} {}", int, sub_str),
+                }
             }
         };
         Ok(format!("({})", string))
