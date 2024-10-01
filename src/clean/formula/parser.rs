@@ -59,7 +59,7 @@ peg::parser! {
             }
 
         rule parameter() -> &'input str
-            = "(" param:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) ")" { param }
+            = "(" param:$(['a'..='z' | 'A'..='Z' | '0'..='9' | '_' | ' ' | ',']*) ")" { param }
 
         rule not_operator() = "!"
 
