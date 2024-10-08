@@ -186,6 +186,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8adc4bb1803a324070e64a98ae98f38934d91957a99cfb3a43dcbc01bc56439"
 
 [[package]]
+name = "ltl-augmentation"
+version = "0.1.0"
+dependencies = [
+ "itertools",
+ "multimap",
+ "num",
+ "peg",
+ "petgraph",
+ "pyo3",
+ "rstest",
+ "termtree",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -198,20 +212,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
-]
-
-[[package]]
-name = "mltl-simplification"
-version = "0.1.0"
-dependencies = [
- "itertools",
- "multimap",
- "num",
- "peg",
- "petgraph",
- "pyo3",
- "rstest",
- "termtree",
 ]
 
 [[package]]

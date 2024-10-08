@@ -1,106 +1,112 @@
-use std::{collections::HashMap, hash::Hash};
-
-use itertools::Itertools;
-use num::{traits::SaturatingSub, Integer, Unsigned};
-
-use crate::{
-    formula::NNFFormula,
-    signals::{signal::Signal, truth_values::TruthValue},
-    trace::Trace,
-};
+use std::collections::HashMap;
 
 use super::Logical;
+use crate::formula::literal::Literal;
+use crate::formula::nnf::NNFFormula;
+use crate::{
+    sequence::{NormalizedSequence, Sequence},
+    trace::Trace,
+    truth_values::TruthValue,
+};
 
-pub struct Monitor<'a, T, V> {
-    root: &'a NNFFormula<T>,
-    satisfaction_signals: HashMap<&'a NNFFormula<T>, Signal<T, V>>,
+pub struct Monitor<V> {
+    trace: Trace<V>,
+    default: Option<V>,
 }
 
-impl<'a, T, V> Monitor<'a, T, V> {
-    pub fn root(&self) -> &'a NNFFormula<T> {
-        self.root
-    }
-
-    pub fn satisfaction_signals(&self) -> &HashMap<&'a NNFFormula<T>, Signal<T, V>> {
-        &self.satisfaction_signals
-    }
-}
-
-impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash, V: TruthValue + Eq + Clone>
-    Monitor<'a, T, V>
-{
-    pub fn new<L>(formula: &'a NNFFormula<T>, trace: &Trace<T, V>) -> Self
-    where
-        L: Logical<T> + From<Signal<T, V>> + Into<Signal<T, V>>,
-    {
-        let atomic_propositions = formula.collect_aps();
-        let missing_propositions = atomic_propositions
-            .iter()
-            .filter(|ap| trace.get_ap_signal(ap.name.as_ref()).is_none())
-            .collect_vec();
-        if !missing_propositions.is_empty() {
-            panic!(
-                "Missing atomic propositions in trace: {:?}",
-                missing_propositions
-            );
+impl<V: TruthValue + Eq + Clone> Monitor<V> {
+    pub fn new(trace: Trace<V>) -> Self {
+        Monitor {
+            trace,
+            default: None,
         }
+    }
+
+    pub fn with_default(trace: Trace<V>, default: V) -> Self {
+        Monitor {
+            trace,
+            default: Some(default),
+        }
+    }
+
+    pub fn evaluate<'a, L>(
+        &self,
+        formula: &'a NNFFormula,
+    ) -> HashMap<&'a NNFFormula, NormalizedSequence<V>>
+    where
+        L: Logical + From<NormalizedSequence<V>> + Into<NormalizedSequence<V>>,
+    {
         let mut logical_signals = HashMap::new();
-        Self::compute_satisfaction_signals::<L>(formula, trace, &mut logical_signals);
-        let satisfaction_signals = logical_signals
+        self.compute_satisfaction_signals::<L>(formula, &mut logical_signals);
+
+        logical_signals
             .into_iter()
             .map(|(formula, logical)| (formula, logical.into()))
-            .collect();
-        Monitor {
-            root: formula,
-            satisfaction_signals,
-        }
+            .collect()
     }
 
-    fn compute_satisfaction_signals<L>(
-        formula: &'a NNFFormula<T>,
-        trace: &Trace<T, V>,
-        logicals: &mut HashMap<&'a NNFFormula<T>, L>,
+    fn compute_satisfaction_signals<'a, L>(
+        &self,
+        formula: &'a NNFFormula,
+        logicals: &mut HashMap<&'a NNFFormula, L>,
     ) where
-        L: Logical<T> + From<Signal<T, V>> + Into<Signal<T, V>>,
+        L: Logical + From<NormalizedSequence<V>> + Into<NormalizedSequence<V>>,
     {
         if logicals.contains_key(formula) {
             return;
         }
         let logical_signal = match formula {
-            NNFFormula::True => Signal::uniform(V::top()).into(),
-            NNFFormula::False => Signal::uniform(V::bot()).into(),
-            NNFFormula::AP(ap) => {
-                let signal = trace.get_ap_signal(ap.name.as_ref()).unwrap();
-                if ap.negated {
-                    L::from(signal.clone()).negation()
-                } else {
-                    signal.clone().into()
+            NNFFormula::Literal(Literal::True) => NormalizedSequence::uniform(V::top()).into(),
+            NNFFormula::Literal(Literal::False) => NormalizedSequence::uniform(V::bot()).into(),
+            NNFFormula::Literal(Literal::Positive(ap)) => {
+                match (self.trace.get_ap_sequence(ap), &self.default) {
+                    (Some(sequence), _) => sequence.clone().into(),
+                    (None, Some(default)) => NormalizedSequence::uniform(default.clone()).into(),
+                    _ => panic!(
+                        "Missing trace value for atomic proposition {}, but no default specified!",
+                        ap
+                    ),
+                }
+            }
+            NNFFormula::Literal(Literal::Negative(ap)) => {
+                match (self.trace.get_ap_sequence(ap), &self.default) {
+                    (Some(sequence), _) => L::from(sequence.clone()).negation(),
+                    (None, Some(default)) => {
+                        L::from(NormalizedSequence::uniform(default.clone())).negation()
+                    }
+                    _ => panic!(
+                        "Missing trace value for atomic proposition {}, but no default specified!",
+                        ap
+                    ),
                 }
             }
             NNFFormula::And(subs) | NNFFormula::Or(subs) => {
                 subs.iter()
-                    .for_each(|sub| Self::compute_satisfaction_signals(sub, trace, logicals));
+                    .for_each(|sub| self.compute_satisfaction_signals(sub, logicals));
                 let it = subs.iter().map(|sub| logicals.get(sub).unwrap());
                 if matches!(formula, NNFFormula::And(..)) {
-                    it.fold(L::from(Signal::uniform(V::top())), |acc, sig| {
-                        acc.conjunction(sig)
-                    })
+                    it.fold(
+                        L::from(NormalizedSequence::uniform(V::top())),
+                        |acc, sig| acc.conjunction(sig),
+                    )
                 } else {
-                    it.fold(L::from(Signal::uniform(V::bot())), |acc, sig| {
-                        acc.disjunction(sig)
-                    })
+                    it.fold(
+                        L::from(NormalizedSequence::uniform(V::bot())),
+                        |acc, sig| acc.disjunction(sig),
+                    )
                 }
             }
-            NNFFormula::Until(lhs, interval, rhs) | NNFFormula::Release(lhs, interval, rhs) => {
-                Self::compute_satisfaction_signals(lhs, trace, logicals);
-                Self::compute_satisfaction_signals(rhs, trace, logicals);
+            NNFFormula::Until(lhs, interval, rhs) => {
+                self.compute_satisfaction_signals(lhs, logicals);
+                self.compute_satisfaction_signals(rhs, logicals);
                 let lhs_signal = logicals.get(lhs.as_ref()).unwrap();
                 let rhs_signal = logicals.get(rhs.as_ref()).unwrap();
-                if matches!(formula, NNFFormula::Until(..)) {
-                    lhs_signal.until(interval, rhs_signal)
-                } else {
-                    lhs_signal.release(interval, rhs_signal)
-                }
+                lhs_signal.until(interval, rhs_signal)
+            }
+            NNFFormula::Globally(interval, sub) => {
+                self.compute_satisfaction_signals(sub, logicals);
+                let sub_signal = logicals.get(sub.as_ref()).unwrap();
+                sub_signal.globally(interval)
             }
         };
         logicals.insert(formula, logical_signal);
@@ -109,55 +115,55 @@ impl<'a, T: Integer + Unsigned + Copy + SaturatingSub + Hash, V: TruthValue + Eq
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
     use rstest::*;
 
+    use super::*;
+    use crate::formula::atomic_proposition::AtomicProposition;
+    use crate::formula::parser::ltl_parser;
     use crate::{
-        monitoring::{boolean::BooleanMonitorSignal, kleene::KleeneMonitorSignal},
-        parser::mltl_parser,
+        monitoring::{boolean::BooleanMonitorSequence, kleene::KleeneMonitorSequence},
+        sequence::boolean::BooleanSequence,
         sets::interval::Interval,
-        signals::{boolean::BooleanSignal, truth_values::Kleene},
+        truth_values::Kleene,
     };
 
-    use super::*;
-
     #[fixture]
-    fn phi() -> NNFFormula<u32> {
-        mltl_parser::formula("a U[2, 5] b | c")
+    fn phi() -> NNFFormula {
+        ltl_parser::formula("a U[2, 5] b | c")
             .expect("Syntax is correct")
             .into()
     }
 
     #[rstest]
-    fn test_monitor_boolean(phi: NNFFormula<u32>) {
-        let a_signal = BooleanSignal::from_positive_intervals([Interval::bounded(2_u32, 4)]);
-        let b_signal = BooleanSignal::from_positive_intervals([Interval::bounded(5, 7)]);
-        let c_signal = BooleanSignal::from_positive_intervals([Interval::bounded(10, 12)]);
+    fn test_monitor_boolean(phi: NNFFormula) {
+        let a_signal = BooleanSequence::from_positive_intervals([Interval::bounded(2_u32, 4)]);
+        let b_signal = BooleanSequence::from_positive_intervals([Interval::bounded(5, 7)]);
+        let c_signal = BooleanSequence::from_positive_intervals([Interval::bounded(10, 12)]);
         let trace = Trace::from(HashMap::from_iter([
-            (Rc::from("a"), a_signal),
-            (Rc::from("b"), b_signal),
-            (Rc::from("c"), c_signal),
+            (AtomicProposition::new("a"), a_signal),
+            (AtomicProposition::new("b"), b_signal),
+            (AtomicProposition::new("c"), c_signal),
         ]));
 
-        let monitor = Monitor::new::<BooleanMonitorSignal<_>>(&phi, &trace);
+        let monitor = Monitor::new(trace);
 
-        let expected = BooleanSignal::from_positive_intervals([
+        let expected = BooleanSequence::from_positive_intervals([
             Interval::bounded(0_u32, 5),
             Interval::bounded(8, 10),
         ]);
 
-        let actual = monitor.satisfaction_signals().get(monitor.root()).unwrap();
+        let satisfaction_sequences = monitor.evaluate::<BooleanMonitorSequence>(&phi);
+        let actual = satisfaction_sequences.get(&phi).unwrap();
 
         assert_eq!(actual, &expected);
 
         if let NNFFormula::Until(.., rhs) = &phi {
-            let expected = BooleanSignal::from_positive_intervals([
+            let expected = BooleanSequence::from_positive_intervals([
                 Interval::bounded(5, 7),
                 Interval::bounded(10, 12),
             ]);
 
-            let actual = monitor.satisfaction_signals().get(rhs.as_ref()).unwrap();
+            let actual = satisfaction_sequences.get(rhs.as_ref()).unwrap();
 
             assert_eq!(actual, &expected);
         } else {
@@ -166,33 +172,48 @@ mod tests {
     }
 
     #[rstest]
-    fn test_monitor_kleene(phi: NNFFormula<u32>) {
-        let a_signal =
-            Signal::indicator(&Interval::bounded(2_u32, 4), Kleene::True, Kleene::Unknown);
-        let b_signal = Signal::indicator(&Interval::bounded(5, 7), Kleene::True, Kleene::False);
-        let c_signal = Signal::indicator(&Interval::bounded(10, 12), Kleene::True, Kleene::Unknown);
+    fn test_monitor_kleene(phi: NNFFormula) {
+        let a_signal = NormalizedSequence::indicator(
+            &Interval::bounded(2_u32, 4),
+            Kleene::True,
+            Kleene::Unknown,
+        );
+        let b_signal =
+            NormalizedSequence::indicator(&Interval::bounded(5, 7), Kleene::True, Kleene::False);
+        let c_signal = NormalizedSequence::indicator(
+            &Interval::bounded(10, 12),
+            Kleene::True,
+            Kleene::Unknown,
+        );
         let trace = Trace::from(HashMap::from_iter([
-            (Rc::from("a"), a_signal),
-            (Rc::from("b"), b_signal),
-            (Rc::from("c"), c_signal),
+            (AtomicProposition::new("a"), a_signal),
+            (AtomicProposition::new("b"), b_signal),
+            (AtomicProposition::new("c"), c_signal),
         ]));
 
-        let monitor = Monitor::new::<KleeneMonitorSignal<_>>(&phi, &trace);
+        let monitor = Monitor::new(trace);
 
-        let mut expected =
-            Signal::indicator(&Interval::bounded(0_u32, 5), Kleene::True, Kleene::Unknown);
+        let mut expected = NormalizedSequence::indicator(
+            &Interval::bounded(0_u32, 5),
+            Kleene::True,
+            Kleene::Unknown,
+        );
         expected.set(&Interval::bounded(8, 10), Kleene::True);
 
-        let actual = monitor.satisfaction_signals().get(monitor.root()).unwrap();
+        let satisfaction_sequences = monitor.evaluate::<KleeneMonitorSequence>(&phi);
+        let actual = satisfaction_sequences.get(&phi).unwrap();
 
         assert_eq!(actual, &expected);
 
         if let NNFFormula::Until(.., rhs) = &phi {
-            let mut expected =
-                Signal::indicator(&Interval::bounded(5, 7), Kleene::True, Kleene::Unknown);
+            let mut expected = NormalizedSequence::indicator(
+                &Interval::bounded(5, 7),
+                Kleene::True,
+                Kleene::Unknown,
+            );
             expected.set(&Interval::bounded(10, 12), Kleene::True);
 
-            let actual = monitor.satisfaction_signals().get(rhs.as_ref()).unwrap();
+            let actual = satisfaction_sequences.get(rhs.as_ref()).unwrap();
 
             assert_eq!(actual, &expected);
         } else {

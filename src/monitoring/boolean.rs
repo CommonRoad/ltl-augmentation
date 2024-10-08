@@ -1,16 +1,15 @@
 use itertools::iproduct;
-use num::{traits::SaturatingSub, Integer, Unsigned};
 
 use crate::{
+    sequence::{boolean::BooleanSequence, NormalizedSequence, Sequence},
     sets::interval::Interval,
-    signals::{boolean::BooleanSignal, signal::Signal},
 };
 
 use super::Logical;
 
-pub type BooleanMonitorSignal<T> = Signal<T, bool>;
+pub type BooleanMonitorSequence = NormalizedSequence<bool>;
 
-impl<T: Integer + Unsigned + Copy + SaturatingSub> Logical<T> for BooleanMonitorSignal<T> {
+impl Logical for BooleanMonitorSequence {
     fn negation(&self) -> Self {
         self.map(|v| !v)
     }
@@ -23,7 +22,7 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> Logical<T> for BooleanMonitor
         self.combine(other, |a, b| a | b)
     }
 
-    fn until(&self, until_interval: &Interval<T>, other: &Self) -> Self {
+    fn until(&self, until_interval: &Interval, other: &Self) -> Self {
         let lhs_intervals = self.intervals_where_eq(&true);
         let rhs_intervals = other.intervals_where_eq(&true);
         let positive_intervals: Vec<_> = iproduct!(lhs_intervals, rhs_intervals)
@@ -31,28 +30,26 @@ impl<T: Integer + Unsigned + Copy + SaturatingSub> Logical<T> for BooleanMonitor
                 positive_until_semantics(&lhs_interval, until_interval, &rhs_interval)
             })
             .collect();
-        BooleanSignal::from_positive_intervals(positive_intervals)
+        BooleanSequence::from_positive_intervals(positive_intervals)
     }
 
-    fn release(&self, release_interval: &Interval<T>, other: &Self) -> Self {
-        let lhs_intervals = self.intervals_where_eq(&false);
-        let rhs_intervals = other.intervals_where_eq(&false);
-        let negative_intervals: Vec<_> = iproduct!(lhs_intervals, rhs_intervals)
-            .flat_map(|(lhs_interval, rhs_interval)| {
-                positive_until_semantics(&lhs_interval, release_interval, &rhs_interval)
-            })
+    fn globally(&self, globally_interval: &Interval) -> Self {
+        let sub_intervals = self.intervals_where_eq(&false);
+        let negative_intervals: Vec<_> = sub_intervals
+            .into_iter()
+            .map(|sub_interval| negative_globally_semantics(&sub_interval, globally_interval))
             .collect();
-        BooleanSignal::from_negative_intervals(negative_intervals)
+        BooleanSequence::from_negative_intervals(negative_intervals)
     }
 }
 
-fn positive_until_semantics<T: Integer + Unsigned + SaturatingSub + Copy>(
-    lhs_interval: &Interval<T>,
-    until_interval: &Interval<T>,
-    rhs_interval: &Interval<T>,
-) -> impl Iterator<Item = Interval<T>> {
+fn positive_until_semantics(
+    lhs_interval: &Interval,
+    until_interval: &Interval,
+    rhs_interval: &Interval,
+) -> impl Iterator<Item = Interval> {
     let lhs_enlarged = match lhs_interval {
-        Interval::Bounded { lb, ub } => Interval::bounded(*lb, *ub + T::one()),
+        Interval::Bounded { lb, ub } => Interval::bounded(*lb, *ub + 1),
         _ => *lhs_interval,
     };
     let to_lb = match until_interval {
@@ -60,8 +57,8 @@ fn positive_until_semantics<T: Integer + Unsigned + SaturatingSub + Copy>(
         _ => *until_interval,
     };
     let lb_to_ub = match until_interval {
-        Interval::Bounded { lb, ub } => Interval::bounded(T::zero(), *ub - *lb),
-        Interval::Unbounded { .. } => Interval::unbounded(T::zero()),
+        Interval::Bounded { lb, ub } => Interval::bounded(0, *ub - *lb),
+        Interval::Unbounded { .. } => Interval::unbounded(0),
         _ => *until_interval,
     };
 
@@ -71,15 +68,19 @@ fn positive_until_semantics<T: Integer + Unsigned + SaturatingSub + Copy>(
     [i1, i2].into_iter().filter(|i| !i.is_empty())
 }
 
+fn negative_globally_semantics(sub_interval: &Interval, globally_interval: &Interval) -> Interval {
+    *sub_interval - *globally_interval
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_until_1() {
-        let lhs = BooleanSignal::from_positive_intervals([Interval::bounded(2_u32, 4)]);
+        let lhs = BooleanSequence::from_positive_intervals([Interval::bounded(2_u32, 4)]);
 
-        let rhs = BooleanSignal::from_positive_intervals([
+        let rhs = BooleanSequence::from_positive_intervals([
             Interval::bounded(5, 7),
             Interval::bounded(10, 12),
         ]);
@@ -88,7 +89,7 @@ mod tests {
 
         assert_eq!(
             until,
-            BooleanSignal::from_positive_intervals([
+            BooleanSequence::from_positive_intervals([
                 Interval::bounded(0, 5),
                 Interval::bounded(8, 10)
             ])
@@ -97,12 +98,12 @@ mod tests {
 
     #[test]
     fn test_until_2() {
-        let lhs = BooleanSignal::from_positive_intervals([
+        let lhs = BooleanSequence::from_positive_intervals([
             Interval::singleton(0_u32),
             Interval::unbounded(3),
         ]);
 
-        let rhs = BooleanSignal::from_positive_intervals([
+        let rhs = BooleanSequence::from_positive_intervals([
             Interval::bounded(0, 3),
             Interval::unbounded(6),
         ]);
@@ -111,7 +112,7 @@ mod tests {
 
         assert_eq!(
             until,
-            BooleanSignal::from_positive_intervals([
+            BooleanSequence::from_positive_intervals([
                 Interval::bounded(0, 3),
                 Interval::unbounded(5)
             ])
@@ -120,37 +121,37 @@ mod tests {
 
     #[test]
     fn test_until_3() {
-        let lhs = BooleanSignal::from_positive_intervals([Interval::unbounded(2_u32)]);
+        let lhs = BooleanSequence::from_positive_intervals([Interval::unbounded(2_u32)]);
 
-        let rhs = BooleanSignal::from_positive_intervals([Interval::bounded(0, 1)]);
+        let rhs = BooleanSequence::from_positive_intervals([Interval::bounded(0, 1)]);
 
         let until = lhs.until(&Interval::bounded(0, 1), &rhs);
 
         assert_eq!(
             until,
-            BooleanSignal::from_positive_intervals([Interval::bounded(0, 1)])
+            BooleanSequence::from_positive_intervals([Interval::bounded(0, 1)])
         );
     }
 
     #[test]
     fn test_until_4() {
-        let lhs = BooleanSignal::from_positive_intervals([Interval::singleton(1_u32)]);
+        let lhs = BooleanSequence::from_positive_intervals([Interval::singleton(1_u32)]);
 
-        let rhs = BooleanSignal::from_positive_intervals([Interval::unbounded(2)]);
+        let rhs = BooleanSequence::from_positive_intervals([Interval::unbounded(2)]);
 
         let until = lhs.until(&Interval::bounded(0, 3), &rhs);
 
         assert_eq!(
             until,
-            BooleanSignal::from_positive_intervals([Interval::unbounded(1)])
+            BooleanSequence::from_positive_intervals([Interval::unbounded(1)])
         );
     }
 
     #[test]
     fn test_until_5() {
-        let lhs = BooleanSignal::from_positive_intervals([Interval::unbounded(2_u32)]);
+        let lhs = BooleanSequence::from_positive_intervals([Interval::unbounded(2_u32)]);
 
-        let rhs = BooleanSignal::from_positive_intervals([
+        let rhs = BooleanSequence::from_positive_intervals([
             Interval::bounded(0, 1),
             Interval::unbounded(5),
         ]);
@@ -159,7 +160,7 @@ mod tests {
 
         assert_eq!(
             until,
-            BooleanSignal::from_positive_intervals([
+            BooleanSequence::from_positive_intervals([
                 Interval::singleton(0),
                 Interval::unbounded(2)
             ])

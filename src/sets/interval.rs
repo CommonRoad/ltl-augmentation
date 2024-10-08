@@ -1,20 +1,20 @@
 use std::fmt::Display;
 
-use num::{traits::SaturatingSub, Integer, Unsigned};
+use crate::sequence::Time;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Interval<T> {
+pub enum Interval {
     Empty,
-    Bounded { lb: T, ub: T },
-    Unbounded { lb: T },
+    Bounded { lb: Time, ub: Time },
+    Unbounded { lb: Time },
 }
 
-impl<T: Ord> Interval<T> {
+impl Interval {
     pub fn empty() -> Self {
         Interval::Empty
     }
 
-    pub fn bounded(lb: T, ub: T) -> Self {
+    pub fn bounded(lb: Time, ub: Time) -> Self {
         if lb > ub {
             Interval::Empty
         } else {
@@ -22,25 +22,21 @@ impl<T: Ord> Interval<T> {
         }
     }
 
-    pub fn bounded_ub_excl(lb: T, mut ub: T) -> Self
-    where
-        T: Integer + Copy,
-    {
+    pub fn bounded_ub_excl(lb: Time, ub: Time) -> Self {
         if lb >= ub {
             Interval::Empty
         } else {
-            ub.dec();
-            Interval::Bounded { lb, ub }
+            Interval::Bounded { lb, ub: ub - 1 }
         }
     }
 
-    pub fn unbounded(lb: T) -> Self {
+    pub fn unbounded(lb: Time) -> Self {
         Interval::Unbounded { lb }
     }
 
-    pub fn singleton(v: T) -> Self
+    pub fn singleton(v: Time) -> Self
     where
-        T: Copy,
+        Time: Copy,
     {
         Interval::Bounded { lb: v, ub: v }
     }
@@ -53,7 +49,7 @@ impl<T: Ord> Interval<T> {
         matches!(self, Interval::Bounded { lb, ub } if lb == ub)
     }
 
-    pub fn contains(&self, v: &T) -> bool {
+    pub fn contains(&self, v: &Time) -> bool {
         match self {
             Interval::Empty => false,
             Interval::Bounded { lb, ub } => lb <= v && v <= ub,
@@ -61,24 +57,21 @@ impl<T: Ord> Interval<T> {
         }
     }
 
-    pub fn lb(&self) -> Option<&T> {
+    pub fn lb(&self) -> Option<&Time> {
         match self {
             Interval::Empty => None,
             Interval::Bounded { lb, .. } | Interval::Unbounded { lb } => Some(lb),
         }
     }
 
-    pub fn ub(&self) -> Option<&T> {
+    pub fn ub(&self) -> Option<&Time> {
         match self {
             Interval::Empty | Interval::Unbounded { .. } => None,
             Interval::Bounded { ub, .. } => Some(ub),
         }
     }
 
-    pub fn intersect(&self, other: &Self) -> Self
-    where
-        T: Copy,
-    {
+    pub fn intersect(&self, other: &Self) -> Self {
         match (self, other) {
             (Interval::Empty, _) | (_, Interval::Empty) => Interval::empty(),
             (Interval::Bounded { lb: lb1, ub: ub1 }, Interval::Bounded { lb: lb2, ub: ub2 }) => {
@@ -95,81 +88,23 @@ impl<T: Ord> Interval<T> {
     }
 }
 
-impl<T: Integer + Unsigned + Copy> Interval<T> {
-    pub fn merge<Annotation: Clone + std::cmp::Eq>(
-        intervals: Vec<(Self, Annotation)>,
-    ) -> Vec<(Self, Vec<Annotation>)> {
-        // Create a list of events, each with a time, a boolean indicating if it's an entry or exit event, and the value
-        // A value becomes active at the time of an entry event and inactive at the time of an exit event
-        // For each interval, we generate an entry event at the lower endpoint and an exit event at the upper endpoint
-        let mut events: Vec<_> = intervals
-            .into_iter()
-            .filter(|(int, _)| !int.is_empty())
-            .flat_map(|(int, val)| match int {
-                Interval::Bounded { lb, ub } => {
-                    vec![(lb, true, val.clone()), (ub, false, val)]
-                }
-                Interval::Unbounded { lb } => {
-                    vec![(lb, true, val)]
-                }
-                Interval::Empty => unreachable!(),
-            })
-            .collect();
-        // Sort by time ascending (entry events come before exit events at the same time)
-        events.sort_unstable_by_key(|(time, is_entry, _)| (*time, *is_entry));
-
-        let mut merged = Vec::new();
-        let mut active = Vec::new();
-        let mut start = T::zero();
-        for (time, is_entry, val) in events {
-            // Entry events complete the interval until time - 1 (because it becomes active at time)
-            // Exit events complete the interval until time (because it becomes inactive at time)
-            // Since we process entry events first, we correctly get unitary intervals if both entries and exits happen at the same time
-            // Entry events at time 0 never complete an interval
-            if !is_entry || time > T::zero() {
-                let end = if is_entry { time - T::one() } else { time };
-                if end >= start && !active.is_empty() {
-                    // Create a new interval with all active values
-                    merged.push((Interval::bounded(start, end), active.clone()));
-                }
-                // The next interval always starts one step after the one we just completed
-                start = end + T::one();
-            }
-
-            // Activate or deactivate the value
-            if is_entry {
-                active.push(val);
-            } else {
-                active.retain(|v| v != &val);
-            }
-        }
-
-        // If there are active values at the end, we need to create a final interval
-        if !active.is_empty() {
-            merged.push((Interval::unbounded(start), active));
-        }
-
-        merged
-    }
-}
-
-impl<T: Display> Display for Interval<T> {
+impl Display for Interval {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Interval::Empty => write!(f, "∅"),
             Interval::Bounded { lb, ub } => write!(f, "[{}, {}]", lb, ub),
-            Interval::Unbounded { lb } => write!(f, "[{}, ∞)", lb),
+            Interval::Unbounded { lb } => write!(f, "[{}, inf]", lb),
         }
     }
 }
 
-impl<T: Ord> Default for Interval<T> {
+impl Default for Interval {
     fn default() -> Self {
         Interval::empty()
     }
 }
 
-impl<T: Integer + Unsigned + Copy> Interval<T> {
+impl Interval {
     pub fn minkowski_sum(self, rhs: Self) -> Self {
         match (self, rhs) {
             (Interval::Empty, _) | (_, Interval::Empty) => Interval::empty(),
@@ -184,13 +119,10 @@ impl<T: Integer + Unsigned + Copy> Interval<T> {
         }
     }
 
-    pub fn minkowski_difference(self, rhs: Self) -> Self
-    where
-        T: SaturatingSub,
-    {
+    pub fn minkowski_difference(self, rhs: Self) -> Self {
         match (self, rhs) {
             (Interval::Empty, _) => Interval::empty(),
-            (_, Interval::Empty) => Interval::unbounded(T::zero()),
+            (_, Interval::Empty) => Interval::unbounded(0),
             (
                 Interval::Bounded {
                     lb: lb_min,
@@ -202,7 +134,7 @@ impl<T: Integer + Unsigned + Copy> Interval<T> {
                 },
             ) => {
                 if ub_min >= ub_sub {
-                    Interval::bounded(lb_min.saturating_sub(&lb_sub), ub_min - ub_sub)
+                    Interval::bounded(lb_min.saturating_sub(lb_sub), ub_min - ub_sub)
                 } else {
                     Interval::empty()
                 }
@@ -210,15 +142,12 @@ impl<T: Integer + Unsigned + Copy> Interval<T> {
             (Interval::Bounded { .. }, Interval::Unbounded { .. }) => Interval::empty(),
             (Interval::Unbounded { lb: lb_min }, Interval::Bounded { lb: lb_sub, .. })
             | (Interval::Unbounded { lb: lb_min }, Interval::Unbounded { lb: lb_sub }) => {
-                Interval::unbounded(lb_min.saturating_sub(&lb_sub))
+                Interval::unbounded(lb_min.saturating_sub(lb_sub))
             }
         }
     }
 
-    pub fn back_shift(self, rhs: Self) -> Self
-    where
-        T: SaturatingSub,
-    {
+    pub fn back_shift(self, rhs: Self) -> Self {
         match (self, rhs) {
             (Interval::Empty, _) | (_, Interval::Empty) => Interval::empty(),
             (
@@ -232,24 +161,22 @@ impl<T: Integer + Unsigned + Copy> Interval<T> {
                 },
             ) => {
                 if ub_min >= lb_sub {
-                    Interval::bounded(lb_min.saturating_sub(&ub_sub), ub_min - lb_sub)
+                    Interval::bounded(lb_min.saturating_sub(ub_sub), ub_min - lb_sub)
                 } else {
                     Interval::empty()
                 }
             }
             (Interval::Bounded { ub: ub_min, .. }, Interval::Unbounded { lb: lb_sub }) => {
                 if ub_min >= lb_sub {
-                    Interval::bounded(T::zero(), ub_min - lb_sub)
+                    Interval::bounded(0, ub_min - lb_sub)
                 } else {
                     Interval::empty()
                 }
             }
             (Interval::Unbounded { lb: lb_min }, Interval::Bounded { ub: ub_sub, .. }) => {
-                Interval::unbounded(lb_min.saturating_sub(&ub_sub))
+                Interval::unbounded(lb_min.saturating_sub(ub_sub))
             }
-            (Interval::Unbounded { .. }, Interval::Unbounded { .. }) => {
-                Interval::unbounded(T::zero())
-            }
+            (Interval::Unbounded { .. }, Interval::Unbounded { .. }) => Interval::unbounded(0),
         }
     }
 
@@ -257,7 +184,7 @@ impl<T: Integer + Unsigned + Copy> Interval<T> {
     pub fn minkowski_sum_intersection(self, rhs: Self) -> Self {
         match (self, rhs) {
             (Interval::Empty, _) => Interval::empty(),
-            (_, Interval::Empty) => Interval::unbounded(T::zero()),
+            (_, Interval::Empty) => Interval::unbounded(0),
             (
                 Interval::Bounded {
                     lb: lb_lhs,
@@ -277,7 +204,7 @@ impl<T: Integer + Unsigned + Copy> Interval<T> {
     }
 }
 
-impl<T: Integer + Unsigned + Copy> std::ops::Add for Interval<T> {
+impl std::ops::Add for Interval {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
@@ -285,7 +212,7 @@ impl<T: Integer + Unsigned + Copy> std::ops::Add for Interval<T> {
     }
 }
 
-impl<T: Integer + Unsigned + SaturatingSub + Copy> std::ops::Sub for Interval<T> {
+impl std::ops::Sub for Interval {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
@@ -293,18 +220,18 @@ impl<T: Integer + Unsigned + SaturatingSub + Copy> std::ops::Sub for Interval<T>
     }
 }
 
-pub struct IntervalIterator<T> {
-    next: Option<T>,
-    ub: Option<T>,
+pub struct IntervalIterator {
+    next: Option<Time>,
+    ub: Option<Time>,
 }
 
-impl<T: Integer + Copy> Iterator for IntervalIterator<T> {
-    type Item = T;
+impl Iterator for IntervalIterator {
+    type Item = Time;
 
     fn next(&mut self) -> Option<Self::Item> {
         let ret = self.next;
         if let Some(x) = self.next.as_mut() {
-            x.inc();
+            *x += 1;
         }
         if self.ub.is_some_and(|ub| self.next.is_some_and(|x| x > ub)) {
             self.next = None;
@@ -313,10 +240,10 @@ impl<T: Integer + Copy> Iterator for IntervalIterator<T> {
     }
 }
 
-impl<T: Integer + Copy> IntoIterator for Interval<T> {
-    type Item = T;
+impl IntoIterator for Interval {
+    type Item = Time;
 
-    type IntoIter = IntervalIterator<T>;
+    type IntoIter = IntervalIterator;
 
     fn into_iter(self) -> Self::IntoIter {
         match self {
@@ -341,33 +268,6 @@ mod tests {
     use itertools::Itertools;
 
     use super::*;
-    use std::collections::HashSet;
-
-    #[test]
-    fn test_merge() {
-        let intervals = vec![
-            (Interval::bounded(1_u32, 3), 1),
-            (Interval::bounded(2, 4), 2),
-            (Interval::bounded(5, 8), 3),
-            (Interval::unbounded(7), 4),
-        ];
-
-        let merged = Interval::merge(intervals);
-
-        assert_eq!(
-            merged.into_iter().collect::<HashSet<_>>(),
-            vec![
-                (Interval::singleton(1), vec![1]),
-                (Interval::bounded(2, 3), vec![1, 2]),
-                (Interval::singleton(4), vec![2]),
-                (Interval::bounded(5, 6), vec![3]),
-                (Interval::bounded(7, 8), vec![3, 4]),
-                (Interval::unbounded(9), vec![4]),
-            ]
-            .into_iter()
-            .collect::<HashSet<_>>()
-        );
-    }
 
     #[test]
     fn test_iter() {
@@ -380,7 +280,7 @@ mod tests {
             (5..).take(1000).collect_vec()
         );
 
-        let interval: Interval<i32> = Interval::empty();
+        let interval = Interval::empty();
         assert_eq!(interval.into_iter().collect_vec(), vec![])
     }
 }

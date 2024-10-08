@@ -1,7 +1,7 @@
-use mltl_simplification::parser::mltl_parser;
+use ltl_augmentation::formula::parser::ltl_parser;
 
 fn main() {
-    let phi = mltl_parser::formula("a -> b U[3, 10] c").unwrap();
-    println!("Hello, world!");
-    println!("This is an MLTL formula: {:?}", phi);
+    let phi = ltl_parser::formula("a -> b U[3, 10] c").expect("Syntax should be correct");
+    println!("This is an LTL formula:");
+    println!("{}", phi);
 }
