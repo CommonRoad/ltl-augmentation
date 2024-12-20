@@ -1,12 +1,39 @@
 [project]
 name = "ltl_augmentation"
+version = "0.1.0"
+readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.7"
+authors = [
+    { name = "Cyber-Physical Systems Group - Technical University of Munich", email = "commonroad@lists.lrz.de" },
+]
+description = "A Toolbox for Augmenting LTL Specifications with External Knowledge"
+keywords = [
+    "simplification",
+    "augmentation",
+    "temporal logic",
+    "specifications",
+]
 classifiers = [
     "Programming Language :: Rust",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: POSIX :: Linux",
 ]
+
+[project.optional-dependencies]
+dev = ["ruff~=0.8.0"]
 
 [build-system]
 requires = ["maturin>=1,<2"]
 build-backend = "maturin"
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+format.quote-style = "double"
+target-version = "py310"
+lint.ignore = ["E203"]
+lint.select = ["E4", "E7", "E9", "F", "I"]

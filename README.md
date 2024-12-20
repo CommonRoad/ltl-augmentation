@@ -34,3 +34,23 @@ maturin develop
 For further options, please see its [documentation](https://www.maturin.rs/).
 
 You can run the `main.py` script to check whether the Python bindings were installed properly.
+
+### Using Pre-Commit Hooks
+
+This project uses [pre-commit](https://pre-commit.com/) to ensure that formatters and linters automatically run when committing files.
+To use pre-commit, install it via pip:
+
+```bash
+pip install pre-commit
+```
+Alternatively, pre-commit is also included in the optional `dev` dependencies of this project.
+
+Then, install the pre-commit hooks so that they automatically run before each commit:
+```bash
+pre-commit install
+```
+
+To run the pre-commit hooks manually, use
+```bash
+pre-commit run --all-files
+```
