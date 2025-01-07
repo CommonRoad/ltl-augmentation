@@ -2,6 +2,7 @@ stages:
   - static-check
   - build-and-test
   - build-wheels
+  - deploy
 
 default:
   image: python:3.12-slim-bookworm
@@ -9,6 +10,11 @@ default:
     - apt-get update && apt-get install -y git curl build-essential
     - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain=stable --profile=minimal -y
     - source "$HOME/.cargo/env"
+
+.python-version-unprotected-branches: &python-version-unprotected-branches "3.10"
+
+.python-versions: &python-versions
+  - *python-version-unprotected-branches
 
 pre_commit:
   stage: static-check
@@ -24,3 +30,122 @@ build-rust:
     - cargo build
     - cargo test
   needs: [ ]
+
+build-sdist:
+  stage: build-wheels
+  image: $CI_REGISTRY/cps/rapid-prototyping-setup/wheelenv:1.0
+  script:
+    - python3 --version
+    - python3 -m build --sdist
+  needs: [ ]
+  artifacts:
+    paths:
+      - dist/*.tar.gz
+    expire_in: 30 minutes
+
+.common-rules:
+  rules:
+    # Rule to disable a job for merge request pipelines (imitate default job behaviour)
+    - &skip_merge_request_pipeline
+      if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: never
+    - if: &full_wheel_build_condition $CI_COMMIT_TAG || $CI_COMMIT_REF_PROTECTED == "true" || $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH || $CI_COMMIT_REF_NAME =~ /^(main|development)$/
+
+build-wheel:
+  stage: build-wheels
+  image: quay.io/pypa/manylinux2014_x86_64:2025.01.05-1
+  variables:
+    PYTHON_VERSION: *python-version-unprotected-branches
+  script:
+    - python$PYTHON_VERSION -m pip wheel -v -w built_wheel dist/*.tar.gz
+    - auditwheel repair -w wheelhouse built_wheel/ltl_augmentation-*.whl
+  needs:
+    - job: build-sdist
+      artifacts: true
+  artifacts:
+    paths:
+      - wheelhouse/*.whl
+    expire_in: 30 minutes
+  rules:
+    # Only run this on the unprotected branches, for protected branches we use cibuildwheel with docker-in-docker
+    - if: $CI_COMMIT_REF_PROTECTED == "false"
+
+build-wheel-cibw:
+  stage: build-wheels
+  # Use the privileged runner as required for Docker-in-Docker (dind)
+  tags:
+    - dind
+  image: $CI_REGISTRY/cps/rapid-prototyping-setup/wheelenv:1.0
+  # make a docker daemon available for cibuildwheel to use
+  services:
+    - name: docker:20.10-dind
+      entrypoint: [ "env", "-u", "DOCKER_HOST" ]
+      command: [ "dockerd-entrypoint.sh" ]
+  variables:
+    DOCKER_HOST: tcp://docker:2375/
+    DOCKER_DRIVER: overlay2
+    # See https://github.com/docker-library/docker/pull/166
+    DOCKER_TLS_CERTDIR: ""
+    # NOTE: The following variables correspond to the default values.
+    # They are specified here so that it is possible to override them using
+    # Gitlab push options or in the UI when running a manual pipeline.
+    #
+    # For example, use git push -o ci.variable="CIBW_BUILD_VERBOSITY=1"
+    # to make cibuildwheel verbose in the pipeline created for the pushed commit.
+    CIBW_BUILD_VERBOSITY: 1
+    # We only use the artifacts (sdist/wheels) from previous jobs, so skip all Git operations
+    GIT_STRATEGY: none
+  script:
+    - cibuildwheel dist/*.tar.gz
+  needs:
+    - job: build-sdist
+      artifacts: true
+  artifacts:
+    paths:
+      - wheelhouse/*.whl
+    expire_in: 30 minutes
+  rules:
+    # We only run the docker-in-docker job on protected branches
+    - if: $CI_COMMIT_REF_PROTECTED == "false"
+      when: never
+    - *skip_merge_request_pipeline
+    # When we are building wheels for a tag/release, build wheel for all supported Python versions and platform
+    # Also routinely build all wheels for the default branch as well as develop (commits on these branches are infrequent)
+    - if: *full_wheel_build_condition
+      variables:
+        CIBW_BUILD: "*"
+    # Fallback rule when we're not building wheels for a tag or a main branch:
+    # In that case, build only manylinux wheels to speed up the pipeline
+    - when: on_success
+      variables:
+        CIBW_BUILD: "*-manylinux_x86_64"
+
+upload-wheel-internal:
+  stage: deploy
+  image: $CI_REGISTRY/cps/rapid-prototyping-setup/wheelenv:1.0
+  variables:
+    TWINE_USERNAME: gitlab-ci-token
+    TWINE_PASSWORD: ${CI_JOB_TOKEN}
+    TWINE_REPOSITORY_URL: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi
+    UPLOAD_WHEELS: "0"
+    # We only use the artifacts (sdist/wheels) from previous jobs, so skip all Git operations
+    GIT_STRATEGY: none
+  script:
+    - twine upload dist/*.tar.gz wheelhouse/*.whl
+  needs:
+    - job: build-sdist
+      artifacts: true
+    - job: build-wheel
+      artifacts: true
+      optional: true
+    - job: build-wheel-cibw
+      artifacts: true
+      optional: true
+  rules:
+    # Disable job for merge request pipelines (imitate default job behaviour)
+    - *skip_merge_request_pipeline
+    - if: $CI_COMMIT_BRANCH == "development"
+      when: manual
+    # Also upload wheels if the UPLOAD_WHEELS was manually set to true
+    # For example, use git push -o ci.variable="UPLOAD_WHEELS=1" to test this
+    - if: $UPLOAD_WHEELS == "1"
