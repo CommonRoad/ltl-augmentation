@@ -128,7 +128,9 @@ build-wheel-cibw:
 upload-wheel-internal:
   stage: deploy
   image: $CI_REGISTRY/cps/rapid-prototyping-setup/wheelenv:1.0
-  before_script: [ ]
+  before_script:
+    # Upgrade twine to the latest version to resolve metadata issues
+    - apk add --upgrade twine
   variables:
     TWINE_USERNAME: gitlab-ci-token
     TWINE_PASSWORD: ${CI_JOB_TOKEN}
