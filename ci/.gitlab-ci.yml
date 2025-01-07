@@ -33,14 +33,10 @@ build-rust:
 
 build-sdist:
   stage: build-wheels
-  image: $CI_REGISTRY/cps/rapid-prototyping-setup/wheelenv:1.0
-  before_script:
-    - apk --update --no-cache add curl && apk add --upgrade curl
-    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain=stable --profile=minimal -y
-    - source "$HOME/.cargo/env"
   script:
-    - python3 --version
-    - python3 -m build --sdist
+    - pip install build
+    - python --version
+    - python -m build --sdist
   needs: [ ]
   artifacts:
     paths:
@@ -127,10 +123,8 @@ build-wheel-cibw:
 
 upload-wheel-internal:
   stage: deploy
-  image: $CI_REGISTRY/cps/rapid-prototyping-setup/wheelenv:1.0
   before_script:
-    # Upgrade twine to the latest version to resolve metadata issues
-    - apk add --upgrade twine
+    - pip install twine
   variables:
     TWINE_USERNAME: gitlab-ci-token
     TWINE_PASSWORD: ${CI_JOB_TOKEN}
