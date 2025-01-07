@@ -35,7 +35,7 @@ build-sdist:
   stage: build-wheels
   image: $CI_REGISTRY/cps/rapid-prototyping-setup/wheelenv:1.0
   before_script:
-    - apk --update --no-cache add curl
+    - apk --update --no-cache add curl && apk add --upgrade curl
     - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain=stable --profile=minimal -y
     - source "$HOME/.cargo/env"
   script:
