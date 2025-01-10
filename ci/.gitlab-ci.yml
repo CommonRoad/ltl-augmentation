@@ -49,6 +49,9 @@ build-sdist:
     - &skip_merge_request_pipeline
       if: $CI_PIPELINE_SOURCE == "merge_request_event"
       when: never
+    - &skip_scheduled_pipeline
+      if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
     - if: &full_wheel_build_condition $CI_COMMIT_TAG || $CI_COMMIT_REF_PROTECTED == "true" || $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH || $CI_COMMIT_REF_NAME =~ /^(main|development)$/
 
 build-wheel:
@@ -146,6 +149,7 @@ upload-wheel-internal:
   rules:
     # Disable job for merge request pipelines (imitate default job behaviour)
     - *skip_merge_request_pipeline
+    - *skip_scheduled_pipeline
     - if: $CI_COMMIT_BRANCH == "development"
       when: manual
     # Also upload wheels if the UPLOAD_WHEELS was manually set to true
