@@ -32,6 +32,7 @@ build-backend = "maturin"
 
 [tool.cibuildwheel]
 skip = ["pp*", "*-musllinux_i686"]
+archs = ["x86_64"]
 environment = { PATH = "$HOME/.cargo/bin:$PATH", PIP_DISABLE_PIP_VERSION_CHECK = "1" }
 build-verbosity = 1
 before-build = "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain=stable --profile=minimal -y"
