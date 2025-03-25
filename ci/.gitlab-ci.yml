@@ -78,7 +78,7 @@ build-wheel-cibw:
   # Use the privileged runner as required for Docker-in-Docker (dind)
   tags:
     - dind
-  image: $CI_REGISTRY/cps/rapid-prototyping-setup/wheelenv:1.0
+  image: $CI_REGISTRY/tum-cps/commonroad-docker/wheelenv:2025.2
   before_script: [ ]
   # make a docker daemon available for cibuildwheel to use
   services:
@@ -100,7 +100,7 @@ build-wheel-cibw:
     # We only use the artifacts (sdist/wheels) from previous jobs, so skip all Git operations
     GIT_STRATEGY: none
   script:
-    - cibuildwheel dist/*.tar.gz
+    - pipx run 'cibuildwheel == 2.*' dist/*.tar.gz
   needs:
     - job: build-sdist
       artifacts: true
